@@ -1,3 +1,8 @@
+/************************************/
+* work with the transaction file here
+*
+*
+/************************************/
 clear all
 set more off
 cap log close
@@ -30,17 +35,15 @@ keep TransId ImportParcelID RecordingDate SalesPrice PropertyFullStreetAddress /
 	PropertyBuildingNumber PropertyCity PropertyState PropertyZip PropertyAddressLatitude ///
 	PropertyAddressLongitude PropertyAddressCTractAndBlock
 
-gen TransactionYear=substr(RecordingDate,1,4)
+gen TransactionYear= substr(RecordingDate,1,4)
 gen TransactionMonth=substr(RecordingDate,6,2)
-gen TransactionDay=substr(RecordingDate,9,2)
+gen TransactionDay = substr(RecordingDate,9,2)
 
-*keep SalesPrice Transaction* ImportParcelID TransId AssessorParcelNumber Recording* TransId *Latit* *Longit* /*CT- Recording date and TransId kept by CT*/
 tab TransactionYear
- /* CT-was a rename here ren TransactionYear Year*/
 destring(TransactionYear), replace
- drop if TransactionYear<2005
+drop if TransactionYear<2005
  
- * fix gis
+ * fix gis - one and only time
 gen LatFixed =PropertyAddressLatitude+0.00008
 gen LongFixed=PropertyAddressLongitude+0.000428
 
@@ -50,5 +53,4 @@ duplicates drop TransId, force
 duplicates drop ImportParcelID RecordingDate SalesPriceAmount, force
 save "$dta\transAllCT.dta", replace
 
-*mark nonARMS sales here.....
 

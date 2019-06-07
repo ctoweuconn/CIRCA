@@ -1,3 +1,10 @@
+/************************************/
+* This file aims to make a row of data for each 
+* ImportParcelID in each year so an appropriate
+* merge with the transaction data can occur later on.
+*
+*
+/************************************/
 clear all
 set more off
 cap log close
@@ -26,19 +33,9 @@ drop if _merge!=3
 drop _merge
 
 
-* bad Batch for pulling AssessmentYr 336905
-*drop if TaxYear >0 & TaxYear!=. & AssessmentYear==.
+* an example of a bad Batch for pulling AssessmentYr 336905
 
-
-** CT Note: there are leading and trialing spaces in the LegalTownship field so this drops many real ddata points.
-*keep if LegalTownship=="BRANFORD"|LegalTownship=="BRIDGEPORT"|LegalTownship=="CLINTON"|LegalTownship=="DARIEN"| ///
-*LegalTownship=="EAST HAVEN"|LegalTownship=="EAST LYME"|LegalTownship=="FAIRFIELD"|LegalTownship=="GREENWICH"| ///
-*LegalTownship=="GROTON"|LegalTownship=="GUILFORD"|LegalTownship=="MADISON"|LegalTownship=="MILFORD"|LegalTownship=="NEW HAVEN" ///
-*|LegalTownship=="NEW LONDON"|LegalTownship=="NORWALK"|LegalTownship=="OLD LYME"|LegalTownship=="OLD SAYBROOK"|LegalTownship=="STAMFORD" ///
-*|LegalTownship=="STONINGTON"|LegalTownship=="STRATFORD"|LegalTownship=="WATERFORD"|LegalTownship=="WEST HAVEN"|LegalTownship=="WESTBROOK" ///
-*|LegalTownship=="WESTPORT"
-
-* a better way   
+* focus on our towns   
 replace LegalTownship = strtrim(LegalTownship)
 keep if LegalTownship=="BRANFORD"|LegalTownship=="BRIDGEPORT"|LegalTownship=="CLINTON"|LegalTownship=="DARIEN"| ///
 LegalTownship=="EAST HAVEN"|LegalTownship=="EAST LYME"|LegalTownship=="FAIRFIELD"|LegalTownship=="GREENWICH"| ///
@@ -60,6 +57,7 @@ drop _merge
 *replace GarageNoOfCars=0 if GarageNoOfCars==.   /*CT Note:can't do this else places like Branford, Old Saybrook, Old Lyme are marked as no homes with garages*/
 *replace FireplaceNumber=0 if FireplaceNumber==.  /*CT Note:can't do this else places like Madison, Milford, New Haven are marked as no homes with fireplaces*/
 
+* I know this is useless but it is left in for now
 merge 1:1 RowID using"$zdta\historic_assess_lotappeal_09.dta"
 drop if _merge==2
 drop _merge
@@ -71,25 +69,22 @@ merge 1:m RowID using "$zdta\historic_assess_buildingarea_09.dta",
 drop if _merge==2
 drop _merge
 
-*** here bring in the current assessment data
 destring(PropertyZip), replace
 destring(PropertyCountyLandUseCode), replace
 destring( BuildingClassStndCode), replace
 destring(  BuildingQualityStndCode ), replace
 destring(  TimeshareStndCode  ), replace
 
-** get the corrected ImportParcelID
+** get the corrected ImportParcelID from CT_Zitra_HistoricAssessmentIDFix.do
 rename ImportParcelID ha_ImportParcelID
 merge m:m ha_ImportParcelID using "$dta\ha_to_curr_idkey.dta", 
 keep if _merge==3
 drop _merge
 
-
-
+* and append with the current assessment data produced in CT_Zitra_CurrentAssessmentProcessing.do
 append using "$dta\current_assess_all.dta"
 
 ** the building areas are many per ImportParcelID
-*** clean by taking the max of these
 /*      'BAL',  # Building Area Living
         'BAF',  # Building Area Finished
         'BAE',  # Effective Building Area
@@ -114,7 +109,8 @@ egen SQFTBAG = mean(_SQFTBAG),  by(ImportParcelID TaxYear)
 *replace SQFTBAG=SQFTBAL*NoOfStories if SQFTBAG==.  /*CT Note: I think this will grossly inflate the sqft because BAL is already on all floors */
 * not sure how we are going to use these so will not fix changed parcels now
 *   BuildingAreaSequenceNumber BuildingOrImprovementNumber
-rename PropertyCountyLandUseDescription PropertyCountyLandUseDesc
+rename PropertyCountyLandUseDescription PropertyCountyLandUseDesc /*name too long*/
+* work with the variables we care about to fill in the empty slots in the assessment record
 global code " LotSiteAppealStndCode StoryTypeStndCode SewerStndCode WaterStndCode ElevatorStndCode FoundationTypeStndCode AirConditioningStndCode HeatingTypeorSystemStndCode RoofStructureTypeStndCode RoofCoverStndCode BathSourceStndCode ArchitecturalStyleStndCode BuildingConditionStndCode   PropertyCountyLandUseDesc PropertyLandUseStndCode OccupancyStatusStndCode"
 global vars "SQFTBAL SQFTBAG PropertyCountyLandUseCode BuildingClassStndCode  TotalRooms TotalBedrooms TotalCalculatedBathCount NoOfStories YearBuilt FireplaceNumber GarageAreaSqFt GarageNoOfCars NoOfBuildings LotSizeSquareFeet"
 
@@ -239,33 +235,10 @@ duplicates drop _all,force  /*restriction*/
 ** in things like BathSource let's just take our lumps and drop some
 duplicates drop ImportParcelID e_Year, force
 save "$dta\allYrs_assess_ct.dta",replace
-sssssss
+
 ***************************************************************************************************
 * end historic assessement processing
 ****************************************************************************************************
-
-use "$dta\allYrs_assess_ct.dta",replace
-
-* now put this with transaction data
-merge 1:m ImportParcelID e_Year  using  "$dta\transAllCT.dta"
-keep if _merge==3
-drop _merge 
-drop if SalesPriceAmount <15000
-drop if SalesPriceAmount > 30000000 /*30 million*/
-
-
-save $dta\prelimEstSample.dta, replace
-
-save E:\Dropbox\prelimEstSample.dta, replace
-
-use E:\Dropbox\prelimEstSample.dta, replace
-
-merge 1:1 TransId using "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\Sandbox\Charles\working\09\dta\\state9_NonArms.dta" 
-keep if _merge==1 | _merge==3
-mvencode nonARMS, mv(0) override
-drop nonARMS_corp1 nonARMS_text nonARMSs_* nonARMSb_*
-save E:\Dropbox\prelimEstSample_wNonARMS.dta, replace
-
 
 
 
