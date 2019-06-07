@@ -150,6 +150,11 @@ foreach yr of numlist 2016/1994{
 	
 }
 drop if e_Year==2018
+
+ * fix gis - one and only time
+gen LatFixed =PropertyAddressLatitude+0.00008
+gen LongFixed=PropertyAddressLongitude+0.000428
+
 save "$dta\Allassess_oneunitcoastal.dta",replace
 *********************************************************************************************************
 * End Limit Sample to coastal(towns) single-fam residences & Merge with standard attributes from ZTRAX  *
