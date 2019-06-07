@@ -1,3 +1,11 @@
+
+/************************************/
+* There are circumstances where the ImportParcelID changes in the
+* Connecticut data this file is to identify those for historic data
+* merges.
+*
+*
+/************************************/
 clear all
 set more off
 cap log close
@@ -6,7 +14,7 @@ global zroot "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow\"
 global root "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\Sandbox\Charles\"
 global dta "$root\dta\CT_Property\"
 global results "$root\results"
-global zdta "$zroot\dta"
+global zdta "$zroot\dta"    /* raw Zillow files for state */
 
 global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
 
@@ -25,4 +33,6 @@ drop if trim(PropertyFullStreetAddress)==""
 
 keep ha_ImportParcelID ImportParcelID
 
+* ha stands for historic assess, now when there are more than one
+* ImportParcelID I have both options
 save $dta\ha_to_curr_idKey.dta, replace
