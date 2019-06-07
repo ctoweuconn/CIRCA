@@ -13,7 +13,7 @@ global zroot "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow\"
 global root "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\Sandbox\Charles\"
 global dta "$root\dta\CT_Property\"
 global results "$root\results"
-global zdta "$zroot\dta"
+global Zitrax "$zroot\dta"
 
 global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
 
