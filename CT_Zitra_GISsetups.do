@@ -42,6 +42,10 @@ drop if e_NoOfUnits>1&e_NoOfUnits!=.
 drop markForAdd numToAdd
 drop connected_add*
 save "$dta\propOneunitcoastal.dta",replace
+
+use "$dta\propOneunitcoastal.dta",clear
+keep ImportParcelID PropertyFullStreetAddress PropertyCity FIPS State County
+export delimited using "D:\Work\CIRCA\Circa\CT_Property\dta\propOneunitcoastal.csv", replace
 ****************************************
 *    End pulling out address points    *
 ****************************************
