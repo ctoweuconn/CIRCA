@@ -44,8 +44,20 @@ drop connected_add*
 save "$dta\propOneunitcoastal.dta",replace
 
 use "$dta\propOneunitcoastal.dta",clear
-keep ImportParcelID PropertyFullStreetAddress PropertyCity FIPS State County
+keep ImportParcelID PropertyFullStreetAddress PropertyCity LatFixed LongFixed FIPS State County
 export delimited using "D:\Work\CIRCA\Circa\CT_Property\dta\propOneunitcoastal.csv", replace
+
+use "$dta\propOneunitcoastal.dta",clear
+keep ImportParcelID PropertyFullStreetAddress PropertyCity LatFixed LongFixed FIPS State County
+merge 1:1 PropertyFullStreetAddress PropertyCity using"prop_va_oneunitfixgoogle.dta",keepusing(latitude longitude)
+ren latitude latGoogle
+ren longitude longGoogle
+export delimited using "D:\Work\CIRCA\Circa\CT_Property\dta\propOneunitcoastal.csv", replace
+*This dataset further restricted by LiDAR2012 domain will be the one to conduct viewshed analysis on
+
+keep if _merge==3
+export delimited using "D:\Work\CIRCA\Circa\CT_Property\dta\prop_va_oneunit.csv", replace
+
 ****************************************
 *    End pulling out address points    *
 ****************************************
