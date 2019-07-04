@@ -11,7 +11,6 @@ global Zitrax "$zroot\dta"
 
 global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
 
-
 ********************************************
 *  Begin merge sales with assessment data  *
 ********************************************
@@ -32,7 +31,7 @@ replace missing_num=missing_num+1 if e_`v'==.
 sort ImportParcelID e_Year
 egen R_dup1=rank(missing_num),by(ImportParcelID e_Year dup1)
 sort ImportParcelID e_Year R_dup1
-*impute values from the duplicated obs with more missings to the one with less missings
+*impute values from the duplicated obs with less missings to the one with more missings
 foreach v in $vars {
 replace e_`v'=e_`v'[_n+1] if e_`v'==.&dup1==1&dup1[_n+1]==1
 }
@@ -46,18 +45,18 @@ drop markForAdd numToAdd dup1 missing_AssYear R_dup1_Ass missing_num R_dup1
 
 sort ImportParcelID PropertyFullStreetAddress PropertyCity LegalTownship e_Year
 * populate one-parcel-consecutive-years where SQFT are missing
-foreach v of varlist SQFTBAG SQFTBAL SQFTBASE{
+foreach v of varlist SQFTBAG SQFTBAL SQFTBASE LotSizeSquareFeet{
 gen e_`v'=`v'
 }
 foreach yr of numlist 2017/1995{
-foreach v of varlist SQFTBAG SQFTBAL SQFTBASE{
+foreach v of varlist SQFTBAG SQFTBAL SQFTBASE LotSizeSquareFeet{
 	display " working on `v' for `yr' now"
 	replace e_`v' = e_`v'[_n-1] if ImportParcelID==ImportParcelID[_n-1] & e_`v'==. & e_Year ==`yr'
 }
 }
 *then go backward 
 foreach yr of numlist 2016/1994{
-	foreach v of varlist SQFTBAG SQFTBAL SQFTBASE{
+	foreach v of varlist SQFTBAG SQFTBAL SQFTBASE LotSizeSquareFeet{
 		display " working on `v' for `yr' now"
 		replace e_`v' = e_`v'[_n+1] if ImportParcelID==ImportParcelID[_n+1] & e_`v'==. & e_Year ==`yr'
 }
