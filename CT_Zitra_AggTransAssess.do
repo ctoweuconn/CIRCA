@@ -11,6 +11,7 @@ global Zitrax "$zroot\dta"
 
 global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
 
+
 ********************************************
 *  Begin merge sales with assessment data  *
 ********************************************
@@ -41,9 +42,28 @@ sort ImportParcelID e_Year R_dup1_Ass R_dup1
 duplicates drop ImportParcelID e_Year,force
 /*restriction 288,585 dropped*/
 drop markForAdd numToAdd dup1 missing_AssYear R_dup1_Ass missing_num R_dup1
+
+
+sort ImportParcelID PropertyFullStreetAddress PropertyCity LegalTownship e_Year
+* populate one-parcel-consecutive-years where SQFT are missing
+foreach v of varlist SQFTBAG SQFTBAL SQFTBASE{
+gen e_`v'=`v'
+}
+foreach yr of numlist 2017/1995{
+foreach v of varlist SQFTBAG SQFTBAL SQFTBASE{
+	display " working on `v' for `yr' now"
+	replace e_`v' = e_`v'[_n-1] if ImportParcelID==ImportParcelID[_n-1] & e_`v'==. & e_Year ==`yr'
+}
+}
+*then go backward 
+foreach yr of numlist 2016/1994{
+	foreach v of varlist SQFTBAG SQFTBAL SQFTBASE{
+		display " working on `v' for `yr' now"
+		replace e_`v' = e_`v'[_n+1] if ImportParcelID==ImportParcelID[_n+1] & e_`v'==. & e_Year ==`yr'
+}
+}
 save "$dta\Allassess_oneunitcoastal_nodup.dta",replace
 
-*Start merging
 use "$dta\sales_nonarmsprocessed.dta",replace
 duplicates report TransId
 merge m:1 ImportParcelID e_Year using"$dta\Allassess_oneunitcoastal_nodup.dta"
