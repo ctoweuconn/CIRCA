@@ -5,6 +5,8 @@
 3- CT_Zitra_AttributeProcessing.do 
 4- CT_Zitra_Buildcoastalsample.do 
 5- CT_Zitra_TransactionProcessing.do 
+6- CT_Zitra_AggTransAssess.do
+7- CT_Zitra_GISsetups.do
 */
 
 * Data from Zillow are simply restricted to CT data and all processing

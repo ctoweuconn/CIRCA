@@ -6,10 +6,13 @@ global zroot "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow\"
 global root "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\Sandbox\Charles\"
 global dta "$root\dta\CT_Property\"
 global results "$root\results"
-global zdta "$zroot\dta"
+global Zitrax "$zroot\dta"
 
 global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
 
+/*
+This process purges non-armslength transaction, search "restrition" to see where obs are dropped
+*/
 *******************************************
 *     Begin process transaction data      *
 *******************************************
