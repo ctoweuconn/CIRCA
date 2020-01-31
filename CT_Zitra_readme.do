@@ -13,6 +13,7 @@
 * is done on a local copy. Restrictions of the data should be done
 * as far from the cleaning as possible so not to exclude parcels too soon.
 
-* All preloading of the property data are done with CT_Zitra_Rawdata_Process.do. GIS attributes are processed through ArcGIS 10.5 functions (showing in python files).
+* All preloading of the property data are done with CT_Zitra_Rawdata_Process.do. 
+* GIS attributes are processed through ArcGIS 10.5 functions (showing in python files).
 
 
