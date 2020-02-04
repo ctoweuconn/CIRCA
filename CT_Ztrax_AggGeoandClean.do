@@ -13,6 +13,7 @@ global gis ""
 
 
 
+
 ***************************************************************************
 *   Merge with GIS variables, Update Lat&Long from Google Geocoding API   *
 ***************************************************************************
@@ -360,10 +361,11 @@ save "$dta0\oneunitcoastsale_Geo.dta",replace
 ************************************
 
 
+
 ************************************
 *       Begin clean  variables     *
 ************************************
-use "$dta0\oneunitcoastsale_Geo.dta",clear
+use "$dta\oneunitcoastsale_Geo.dta",clear
 tab PropertyCountyLandUseDescription
 drop if NoOfBuilding==0 /*restriction 8 obs dropped*/
 tab SFHA_2012, sum(SalesPrice)
@@ -450,20 +452,7 @@ tab BuildingCondition
 tab e_BuildingConditionStndCode
 
 /*
-group(e_Bui |
-ldingCondit |
-ionStndCode |
-          ) |      Freq.     Percent        Cum.
-------------+-----------------------------------
-          0 |     30,128       26.23       26.23
-          1 |     54,236       47.22       73.44
-          2 |      6,517        5.67       79.12
-          3 |      1,109        0.97       80.08
-          4 |     22,700       19.76       99.85
-          5 |        176        0.15      100.00
-          6 |          1        0.00      100.00
-------------+-----------------------------------
-      Total |    114,867      100.00
+
 */
 
 egen HeatingType=group(e_HeatingTypeorSystemStndCode)
@@ -675,7 +664,7 @@ global Geo "Waterfront_* e_Elev_dev e_Elev_devsq Lndist_brownfield Lndist_highwa
 sum $Geo
 
 global Match_continue "lnviewarea lnviewangle e_Elev_dev Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber  e_TotalBedrooms e_NoOfStories"
-save "$dta0\oneunitcoastsale_formatch.dta",replace
+save "$dta\oneunitcoastsale_formatch.dta",replace
 
 hist Dist_Coast if Dist_Coast<=60000, xtitle(Distance to the Coastline) xline(3168,lc(red))
 *******************************
