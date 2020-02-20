@@ -3,17 +3,19 @@ set more off
 
 *Change the directories here
  *work space
-cd "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow"
-global root "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow"
+cd ""
+global zroot ""
+global root ""
  *current assessment and sales data directory
-global dta1 "$root\current_assess_transaction"
+global dta1 "$zroot\current_assess_transaction"
  *historic assessment data directory
-global dta2 "$root\historic_assessment"
+global dta2 "$zroot\historic_assessment"
 **** We only process the current assessment data here, historic assessment data can be processed in a similar way.
 
  *output directory
 global dta "$root\dta"
 ********************************************************
+
 
 
 **************************

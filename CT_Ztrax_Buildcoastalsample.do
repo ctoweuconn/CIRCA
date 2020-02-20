@@ -1,19 +1,20 @@
 clear all
 set more off
 cap log close
-
-global zroot "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow\"
-global root "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\Sandbox\Charles\"
-global dta "$root\dta\CT_Property\"
+*Change directories here
+global zroot ""
+global root ""
+global dta "$root\dta"
 global results "$root\results"
 global Zitrax "$zroot\dta"
 
-global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
+global gis ""
 
-************************************************************************************************
+
+******************************************************************************************************
 *  Limit Sample to coastal(towns) single-fam residences & Merge with standard attributes from ZTRAX  *
-************************************************************************************************
-use "$dta\all_assess_ct.dta",clear
+******************************************************************************************************
+use "$dta0\all_assess_ct.dta",clear
 replace LegalTownship = strtrim(LegalTownship)
 keep if LegalTownship=="BRANFORD"|LegalTownship=="BRIDGEPORT"|LegalTownship=="CLINTON"| ///
 LegalTownship=="DARIEN"|LegalTownship=="EAST HAVEN"|LegalTownship=="EAST LYME"| ///
@@ -24,33 +25,33 @@ LegalTownship=="OLD LYME"|LegalTownship=="OLD SAYBROOK"|LegalTownship=="STAMFORD
 LegalTownship=="STONINGTON"|LegalTownship=="STRATFORD"|LegalTownship=="WATERFORD"| ///
 LegalTownship=="WEST HAVEN"|LegalTownship=="WESTBROOK"|LegalTownship=="WESTPORT"
 
-merge m:1 RowID using"$dta\current_assess_value_ct.dta"
+merge m:1 RowID using"$dta0\current_assess_value_ct.dta"
 drop if _merge==2
 capture drop _merge
-merge m:1 RowID using"$dta\current_assess_ct_building.dta"
+merge m:1 RowID using"$dta0\current_assess_ct_building.dta"
 drop if _merge==2
 capture drop _merge
-merge m:1 RowID using"$dta\current_assess_ct_buildingarea.dta",keepusing(SQFTBAG SQFTBAL SQFTBASE)
+merge m:1 RowID using"$dta0\current_assess_ct_buildingarea.dta",keepusing(SQFTBAG SQFTBAL SQFTBASE)
 drop if _merge==2
 capture drop _merge
-merge m:1 RowID using"$dta\current_assess_ct_waterfront.dta", keepusing(Waterfront)
+merge m:1 RowID using"$dta0\current_assess_ct_waterfront.dta", keepusing(Waterfront)
 drop if _merge==2
 capture drop _merge
 replace Waterfront=0 if Waterfront==.
-merge m:1 RowID using"$dta\current_assess_ct_pool.dta",keepusing(PoolStndCode Pool)
+merge m:1 RowID using"$dta0\current_assess_ct_pool.dta",keepusing(PoolStndCode Pool)
 drop if _merge==2
 capture drop _merge
 replace Pool=0 if Pool==.
-merge m:1 RowID using"$dta\current_assess_ct_garage.dta",keepusing(GarageNoOfCars GarageStndCode)
+merge m:1 RowID using"$dta0\current_assess_ct_garage.dta",keepusing(GarageNoOfCars GarageStndCode)
 drop if _merge==2
 capture drop _merge
 
 
-merge m:1 RowID using"$dta\historic_assess_value_ct.dta",update
+merge m:1 RowID using"$dta0\historic_assess_value_ct.dta",update
 drop if _merge==2
 drop _merge
 
-merge m:1 RowID using"$dta\historic_assess_ct_building.dta",update keepusing(NoOfUnits PropertyCountyLandUseDescription PropertyCountyLandUseCode BuildingOrImprovementNumber BuildingConditionStndCode YearBuilt NoOfStories TotalRooms TotalBedrooms TotalCalculatedBathCount HeatingTypeorSystemStndCode AirConditioningStndCode FireplaceNumber *Stnd*)
+merge m:1 RowID using"$dta0\historic_assess_ct_building.dta",update keepusing(NoOfUnits PropertyCountyLandUseDescription PropertyCountyLandUseCode BuildingOrImprovementNumber BuildingConditionStndCode YearBuilt NoOfStories TotalRooms TotalBedrooms TotalCalculatedBathCount HeatingTypeorSystemStndCode AirConditioningStndCode FireplaceNumber *Stnd*)
 drop if _merge==2
 drop _merge
 
@@ -61,10 +62,10 @@ drop if TaxYear==.
 
 
 duplicates report RowID
-merge m:1 RowID using"$dta\historic_assess_ct_buildingarea.dta",update keepusing(SQFTBAG SQFTBAL SQFTBASE)
+merge m:1 RowID using"$dta0\historic_assess_ct_buildingarea.dta",update keepusing(SQFTBAG SQFTBAL SQFTBASE)
 drop if _merge==2
 drop _merge
-merge m:1 RowID using"$dta\historic_assess_ct_garage.dta",update keepusing(GarageStndCode GarageNoOfCars)
+merge m:1 RowID using"$dta0\historic_assess_ct_garage.dta",update keepusing(GarageStndCode GarageNoOfCars)
 drop if _merge==2
 drop _merge
 
@@ -155,8 +156,7 @@ drop if e_Year==2018
 gen LatFixed =PropertyAddressLatitude+0.00008
 gen LongFixed=PropertyAddressLongitude+0.000428
 
-save "$dta\Allassess_oneunitcoastal.dta",replace
+save "$dta0\Allassess_oneunitcoastal.dta",replace
 *********************************************************************************************************
 * End Limit Sample to coastal(towns) single-fam residences & Merge with standard attributes from ZTRAX  *
 *********************************************************************************************************
-

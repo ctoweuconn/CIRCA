@@ -1,21 +1,15 @@
-/************************************/
-* This file aims to make a row of data for each 
-* ImportParcelID in each year so an appropriate
-* merge with the transaction data can occur later on.
-*
-*
-/************************************/
 clear all
 set more off
 cap log close
-
-global zroot "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\Zillow\"
-global root "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\Sandbox\Charles\"
-global dta "$root\dta\CT_Property\"
+*Change directories here
+global zroot ""
+global root ""
+global dta "$root\dta"
 global results "$root\results"
-global Zitrax "$zroot\dta"
+global zdta "$zroot\dta"
 
-global gis "\\Guild.grove.ad.uconn.edu\EFS\CTOWE\CIRCA\GIS_data\GISdata"
+global gis ""
+
 
 
 **************************************
@@ -30,9 +24,11 @@ ren ImportParcelID ha_ImportParcelID
 label variable ha_ImportParcelID "id from historic assessemnt file"
 drop if trim(PropertyFullStreetAddress)==""
 drop if trim(PropertyCity)==""
-merge m:m PropertyFullStreetAddress PropertyCity PropertyAddressUnitNumber using "$Zitrax\dta\current_assess_09.dta", keepusing(ImportParcelID)
+
+joinby PropertyFullStreetAddress PropertyCity PropertyAddressUnitNumber using "$Zitrax\dta\current_assess_09.dta"
 keep ha_ImportParcelID ImportParcelID
 drop if ha_ImportParcelID==.|ImportParcelID==.
+duplicates report
 save $dta\ha_to_curr_idKey.dta, replace
 
 
@@ -46,7 +42,7 @@ PropertyZoningDescription TaxIDNumber TaxAmount TaxYear NoOfBuildings LegalTowns
 LotSizeAcres LotSizeSquareFeet PropertyAddressLatitude PropertyAddressLongitude BatchID
 
 ren ImportParcelID ha_ImportParcelID
-merge m:m ha_ImportParcelID using "$dta\ha_to_curr_idkey.dta"
+joinby ha_ImportParcelID using "$dta0\ha_to_curr_idkey.dta",unmatched(master)
 drop _merge
 /*_merge==1 means the address is missing or doesn't show up at all in current assess file, so it's 
 not associated with an ImportParcelID */
@@ -67,10 +63,12 @@ PropertyZoningDescription TaxIDNumber TaxAmount TaxYear NoOfBuildings LegalTowns
 LotSizeAcres LotSizeSquareFeet PropertyAddressLatitude PropertyAddressLongitude BatchID
 
 duplicates drop
-save "$dta\all_assess_ct.dta",replace
+save "$dta0\all_assess_ct.dta",replace
 **************************************
 *  End assessment data aggregation   *
 **************************************
+
+
 
 
 
