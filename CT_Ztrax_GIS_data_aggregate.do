@@ -631,7 +631,132 @@ ren fld_zone fld_zonepoly
 ren static_bfe static_bfepoly
 save "$dta\buildingpoly_2019SFHA.dta",replace
 
+***Non-VA SFHA assignment based on building poly ****
+import delimited D:\Work\CIRCA\Circa\GISdata\NonVA_building_propbrev.txt, clear 
+save "$dta\NonVA_building_propbrev.dta",replace
 
+use "$GIS\\Impervioussurface\buildings2012_NonVA.dta",clear
+gen in_fid=_n-1
+merge 1:m in_fid using"$dta\NonVA_building_propbrev.dta"
+sort in_fid near_rank
+drop objectid _merge
+ren near_fid FID
+merge m:1 FID using"$dta\proponeunit_building_revise.dta"
+keep if _merge==3
+drop _merge
+*only keep non-va points
+merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\proponeunit_nonVA.dta",keepusing(PropertyFullStreetAddress PropertyCity ImportParcelID)
+drop if _merge!=3
+drop _merge
+*only keep properly located non-va points
+merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\pointcheck_NONVA.dta"
+drop if _merge==2
+drop if diff_address==1
+drop _merge
+
+sort FID near_dist near_rank
+capture drop point_building_rank
+egen point_building_rank = rank(_n),by(FID)
+*For each address points, only keep two buildings
+drop if point_building_rank>2
+duplicates report in_fid 
+sort in_fid near_rank
+*Then look back at buildings, drop lower ranked points, keeping only one for each.
+egen building_pointrank = rank(_n),by(in_fid)
+drop if near_rank>1&near_dist>50&building_pointrank>1
+drop if near_dist>150
+capture drop building_pointrank
+sort in_fid near_rank
+egen building_pointrank = rank(_n),by(in_fid)
+drop if building_pointrank>1
+
+*Now try to drop 2nd-ranked buildings for each point
+capture drop point_building_rank
+sort FID near_dist near_rank
+capture drop point_building_rank1
+egen point_building_rank1 = rank(_n),by(FID)
+*Consider building area
+sort FID shape_area
+capture drop point_building_rank2
+egen point_building_rank2 = rank(_n),by(FID)
+drop if point_building_rank1==2&point_building_rank2==1
+
+capture drop point_building_rank
+sort FID near_dist
+egen point_building_rank = rank(_n),by(FID)
+tab point_building_rank
+drop if point_building_rank==2
+drop diff_street diff_address building_pointrank point_building_rank1 point_building_rank2 point_building_rank
+save "$dta/proponeunit_link_building_NonVA.dta",replace
+
+*SFHA 2012 asssigning with building polygons Non-VA
+use "D:\Work\CIRCA\Circa\GISdata\buildingsNonVA_SFHA2012.dta",clear
+sort fid_buildi fld_zone
+duplicates tag fid_buildi, gen(dup1)
+drop if dup1>=1&fld_zone=="AE"|fld_zone=="AO"
+duplicates report fid_buildi
+duplicates drop fid_buildi fld_zone,force
+duplicates report fid_buildi
+drop dup1
+
+ren fid_buildi in_fid
+merge 1:1 in_fid using"$dta/proponeunit_link_building_NonVA.dta"
+drop if _merge==1
+*keep only necessary
+keep FID PropertyFullStreetAddress PropertyCity ImportParcelID FIPS State County LegalTownship LatFixed LongFixed latGoogle longGoogle lat_rev long_rev fld_zone static_bfe _merge
+gen SFHA_poly2012_NonVA=(_merge==3)
+ren fld_zone fld_zonepoly_NonVA
+ren static_bfe static_bfepoly_NonVA
+
+drop _merge
+save "$dta\buildingpolyNonVA_2012SFHA.dta",replace
+
+*SFHA 2017 asssigning with building polygons Non-VA
+use "D:\Work\CIRCA\Circa\GISdata\buildingsNonVA_SFHA2017.dta",clear
+sort fid_buildi fld_zone
+duplicates tag fid_buildi, gen(dup1)
+drop if dup1>=1&fld_zone=="AE"|fld_zone=="AO"
+duplicates report fid_buildi
+duplicates drop fid_buildi fld_zone,force
+duplicates report fid_buildi
+drop dup1
+
+ren fid_buildi in_fid
+merge 1:1 in_fid using"$dta/proponeunit_link_building_NonVA.dta"
+drop if _merge==1
+
+*keep only necessary
+keep FID PropertyFullStreetAddress PropertyCity ImportParcelID FIPS State County LegalTownship LatFixed LongFixed latGoogle longGoogle lat_rev long_rev fld_zone static_bfe _merge
+gen SFHA_poly2017_NonVA=(_merge==3)
+ren fld_zone fld_zonepoly_NonVA
+ren static_bfe static_bfepoly_NonVA
+drop _merge
+save "$dta\buildingpolyNonVA_2017SFHA.dta",replace
+
+*SFHA 2019 asssigning with building polygons Non-VA
+use "D:\Work\CIRCA\Circa\GISdata\buildingsNonVA_SFHA2019.dta",clear
+sort fid_buildi fld_zone
+duplicates tag fid_buildi, gen(dup1)
+drop if dup1>=1&fld_zone=="AE"|fld_zone=="AO"
+duplicates report fid_buildi
+duplicates drop fid_buildi fld_zone,force
+duplicates report fid_buildi
+drop dup1
+
+ren fid_buildi in_fid
+merge 1:1 in_fid using"$dta/proponeunit_link_building_NonVA.dta"
+drop if _merge==1
+
+*keep only necessary
+keep FID PropertyFullStreetAddress PropertyCity ImportParcelID FIPS State County LegalTownship LatFixed LongFixed latGoogle longGoogle lat_rev long_rev fld_zone static_bfe _merge
+gen SFHA_poly2019_NonVA=(_merge==3)
+ren fld_zone fld_zonepoly_NonVA
+ren static_bfe static_bfepoly_NonVA
+drop _merge
+save "$dta\buildingpolyNonVA_2019SFHA.dta",replace
+
+
+*SFHA boundary sample
 import delimited D:\Work\CIRCA\Circa\GISdata\NearSFHA12boundary.txt, clear 
 ren in_fid FID
 drop near_fid
