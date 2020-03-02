@@ -47,13 +47,15 @@ replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+*Drop observations before 1998 (only three towns, GIS data maybe inaccurate for older sales)
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
 *drop possible house flipping events
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
@@ -96,7 +98,7 @@ gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTowns
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
@@ -128,8 +130,8 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-/*restriction 1574 dropped */
-*135 treated dropped here (do not have two treated in one cell or have less than 4 potentially paried controls)
+/*restriction 1534 dropped */
+*128 treated dropped here (do not have two treated in one cell or have less than 4 potentially paried controls)
 
 *Simple NNMatching
 capture drop nn*
@@ -140,7 +142,7 @@ capture teffects nnmatch (SalesPrice $Match_continue)(SFHA), tlevel(1) ematch($M
 replace os1=. if os1==0
 tab os1
 egen Cellos=mean(os1),by($Match_cat)
-*34 treated dropped here, 964 total dropped
+*30 treated dropped here, 573 total dropped
 drop if Cellos==1
 
 reg SalesPrice SFHA
@@ -148,12 +150,12 @@ eststo Mean_diff
 
 duplicates report PropertyFullStreetAddress PropertyCity LegalTownship
 di r(unique_value)
-*86837 transactions - 63381 properties
+*85964 transactions - 62885 properties
 
 tab SFHA
 duplicates report PropertyFullStreetAddress PropertyCity LegalTownship if SFHA==1
 di r(unique_value)
-*9278 SFHA transactions - 6834 properties
+*9148 SFHA transactions - 6762 properties
 
 capture drop os2
 capture drop nn*
@@ -168,7 +170,7 @@ ferences are greater than 0.15 standard deviations, which is below the suggested
 */
 duplicates report nn1 if SFHA==1&nn1!=.
 di r(unique_value)
-*9278/5954
+*9148/5865
 /*
 capture drop os2
 capture drop nn*
@@ -211,7 +213,7 @@ save "$dta\data_4analysis.dta",replace
 
 
 *****************************************
-*      BCME for multiple estimates      *
+*      BCME for by-mortgage estimates      *
 *****************************************
 set more off
 use "$dta\data_analysis_tem.dta",clear
@@ -242,7 +244,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*7190/4672
+*7078/4583
 /*
 capture drop os2
 capture drop nn*
@@ -273,7 +275,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*2088/1354
+*2070/1345
 /*
 capture drop os2
 capture drop nn*
@@ -322,13 +324,14 @@ replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
 *drop possible house flipping events
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
@@ -371,7 +374,7 @@ gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTowns
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
@@ -408,7 +411,7 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-*86 treated dropped here, 2830 dropped in total
+*79 treated dropped here, 2125 dropped in total
 
 *All transactions
 capture drop nn*
@@ -420,7 +423,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat)
-*60 treated dropped here, 1462 total dropped
+*64 treated dropped here, 1425 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -432,7 +435,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if SFHA==1&nn1!=.
 di r(unique_value)
-*5092/4004
+*5056/3971
 capture drop os2
 capture drop nn*
 *BCME_Ln
@@ -463,7 +466,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*3970/3139
+*3938/3101
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -488,16 +491,13 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*1122/865
+*1118/873
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_Ln_D_nosurge
 
 esttab BCME_Ln_nosurge BCME_Ln_H_nosurge BCME_Ln_D_nosurge using"$results\results_BCMEnosurge.csv", keep(*.SFHA) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-
-
-
 
 *Construct the matched sample
 use "$dta\data_analysis_tem_nosurge.dta",clear
@@ -607,13 +607,14 @@ replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
 *drop possible house flipping events
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
@@ -655,7 +656,7 @@ gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTowns
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
@@ -687,7 +688,7 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-*198 treated dropped, 2261 dropped in total
+*183 treated dropped, 1877 dropped in total
 
 *use 70000 as low income criterion
 *BCME
@@ -701,7 +702,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*20 treated dropped here, 250 total dropped
+*16 treated dropped here, 119 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -711,7 +712,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*2006/1160
+*1977/1132
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -725,7 +726,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*18 treated dropped here, 310 total dropped
+*18 treated dropped here, 258 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -735,7 +736,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*573/324
+*563/321
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.urban) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -751,7 +752,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*12 treated dropped here, 316 total dropped
+*8 treated dropped here, 51 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -761,12 +762,11 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*4155/2884
+*4092/2842
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_LnH_normInc
-
 
 set seed 1234567
 capture drop os1
@@ -776,7 +776,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*14 treated dropped here, 221 total dropped
+*10 treated dropped here, 139 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -786,7 +786,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*1289/893
+*1288/892
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -812,7 +812,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*971/564
+*958/550
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -827,7 +827,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*10 treated dropped here, 283 total dropped
+*12 treated dropped here, 364 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -837,7 +837,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*179/90
+*181/89
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.urban) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -877,13 +877,15 @@ replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
+
 *drop possible house flipping events
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
 gen neg_transprice=-SalesPrice
@@ -924,7 +926,7 @@ gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTowns
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
@@ -956,7 +958,7 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-*198 treated dropped, 2261 dropped in total
+*197 treated dropped, 2272 dropped in total
 
 *All transactions
 capture drop nn*
@@ -1136,7 +1138,7 @@ global FE "i.BuildingCondition i.HeatingType i.AirCondition i.SalesYear i.SalesM
 eststo OLS: reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period i.fid_school#i.period, cluster(ImportParcelID)
 eststo OLS_Ln: reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.fid_school#i.period, cluster(ImportParcelID)
 tab SFHA
-*9278/77559
+*9287/77786
 esttab OLS OLS_Ln using"$results\results_SFHA_OLS.csv", keep(SFHA $View2 e_LnSQFT e_LnSQFT_tot e_LnLSQFT $X) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 
@@ -1475,10 +1477,11 @@ eststo RA_surgeandDfirm: reg Ln_Price SFHA i.Sandysurge_feet $View2 $X1 $FE i.fi
 
 *BFE
 set more off
-*eststo RA_ln_bfe:  reg Ln_Price i.static_bfe $X2 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(ImportParcelID)
+eststo RA_ln_bfe:     reg Ln_Price i.BFE $X2 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(ImportParcelID)
 
-esttab RA_Sandysurge RA_ln_fldzones using"$results\results_Otherfactors.csv", keep(*.Sandysurge_feet A_zone V_zone $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-esttab RA_surgeandDfirm using"$results\results_SandySandDfirm.csv", keep(SFHA *.Sandysurge_feet $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+esttab RA_Sandysurge RA_ln_fldzones RA_ln_bfe using"$results\results_Otherfactors.csv", keep(*.Sandysurge_feet A_zone V_zone *.BFE $X2) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+esttab RA_surgeandDfirm using"$results\results_SandySandDfirm.csv", keep(SFHA *.Sandysurge_feet $X2) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+
 coefplot RA_Sandysurge, saving("$results\Sandysurge_discount.gph",replace)  vertical keep(*.Sandysurge_feet) levels(90) recast(con) xlabel(,angle(45)) m(D) msize(small) mfcolor(white) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
 
 ********************************************************************************
@@ -1510,6 +1513,7 @@ xtset PID period
 
 hist LoanAmount if LoanAmount<=1000000
 hist LoanAmount if SFHA==1&LoanAmount<=1000000
+hist LoanAmount if SFHA==1&SalewithLoan==1&LoanAmount<=1000000
 sum LoanAmount
 
 *Calculate average upfront payment
@@ -1561,13 +1565,14 @@ replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
 *drop possible house flipping events
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
@@ -1603,7 +1608,7 @@ drop if town==.
 drop if fid_school==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
@@ -1632,7 +1637,7 @@ capture drop os2
 teffects nnmatch (SalesPrice $Match_continue)(SFHA) if os1!=1, tlevel(1) ematch($Match_cat) atet nn(1) gen(nn) vce(iid) os(os2)
 tebalance summarize
 duplicates report nn1 if nn1!=.
-di r(unique_value) /*6623*/
+di r(unique_value) /*6015*/
 
 *0 SFHA property (treated) have no exact match
 estat summarize 
