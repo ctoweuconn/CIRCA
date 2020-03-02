@@ -98,12 +98,12 @@ ren latgoogle latGoogle
 ren longgoogle longGoogle
 
 *2012 Building SFHA assignment
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\property_brev_2012SFHA.dta"
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\property_brev_2012SFHA.dta"
 replace SFHA_2012=0 if SFHA_2012==.
 ren fld_zone fldzone_2012
 ren static_bfe statbfe_2012
 drop _merge
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\buildingpoly_2012SFHA.dta"
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\buildingpoly_2012SFHA.dta"
 replace SFHA_poly2012=1 if SFHA_poly2012==.&SFHA_2012==1
 replace SFHA_poly2012=0 if SFHA_poly2012==.
 ren fld_zonepoly fldzone_poly2012
@@ -119,13 +119,13 @@ replace statbfe_2012=statbfe_poly2012 if statbfe_2012!=statbfe_poly2012&statbfe_
 *2620 revised
 
 *2017 Building SFHA assignment
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\property_brev_2017SFHA.dta"
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\property_brev_2017SFHA.dta"
 drop if _merge==2
 replace SFHA_2017=0 if SFHA_2017==.
 ren fld_zone fldzone_2017
 ren static_bfe statbfe_2017
 drop _merge
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\buildingpoly_2017SFHA.dta"
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\buildingpoly_2017SFHA.dta"
 drop if _merge==2
 replace SFHA_poly2017=1 if SFHA_poly2017==.&SFHA_2017==1
 replace SFHA_poly2017=0 if SFHA_poly2017==.
@@ -142,13 +142,13 @@ replace statbfe_2017=statbfe_poly2017 if statbfe_2017!=statbfe_poly2017&statbfe_
 *3051 revised
 
 *2019 Building SFHA assignment
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\property_brev_2019SFHA.dta"
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\property_brev_2019SFHA.dta"
 drop if _merge==2
 replace SFHA_2019=0 if SFHA_2019==.
 ren fld_zone fldzone_2019
 ren static_bfe statbfe_2019
 drop _merge
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\buildingpoly_2019SFHA.dta"
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\buildingpoly_2019SFHA.dta"
 drop if _merge==2
 replace SFHA_poly2019=1 if SFHA_poly2019==.&SFHA_2019==1
 replace SFHA_poly2019=0 if SFHA_poly2019==.
@@ -163,28 +163,72 @@ replace fldzone_2019=fldzone_poly2019 if fldzone_2019!=fldzone_poly2019&fldzone_
 *3243 revised
 replace statbfe_2019=statbfe_poly2019 if statbfe_2019!=statbfe_poly2019&statbfe_poly2019!=.
 *3141 revised
+tab SFHA_poly2019
 
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\NearSFHA12boundary.dta",keepusing(Dist_12SFHA_B)
+*2012 Building SFHA assignment based on building poly - NonVA
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\buildingpolyNonVA_2012SFHA.dta",keepusing(SFHA_poly2012_NonVA fld_zonepoly_NonVA static_bfepoly_NonVA)
+ren fld_zonepoly_NonVA fldzone_poly2012_NonVA
+ren static_bfepoly_NonVA statbfe_poly2012_NonVA
+drop _merge
+tab SFHA_2012 SFHA_poly2012_NonVA
+*revise flood zone factors according to polygon SFHA results
+replace SFHA_2012=SFHA_poly2012_NonVA if (SFHA_2012!=SFHA_poly2012_NonVA)&(SFHA_poly2012_NonVA!=.)
+*2058 revised
+replace fldzone_2012=fldzone_poly2012 if fldzone_2012!=fldzone_poly2012&(SFHA_poly2012_NonVA!=.)
+*6251 revised
+replace statbfe_2012=statbfe_poly2012 if statbfe_2012!=statbfe_poly2012&(SFHA_poly2012_NonVA!=.)
+*6251 revised
+
+*2017 Building SFHA assignment based on building poly - NonVA
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\buildingpolyNonVA_2017SFHA.dta",keepusing(SFHA_poly2017_NonVA fld_zonepoly_NonVA static_bfepoly_NonVA)
+ren fld_zonepoly_NonVA fldzone_poly2017_NonVA
+ren static_bfepoly_NonVA statbfe_poly2017_NonVA
+drop _merge
+tab SFHA_2017 SFHA_poly2017_NonVA
+*revise flood zone factors according to polygon SFHA results
+replace SFHA_2017=SFHA_poly2017_NonVA if (SFHA_2017!=SFHA_poly2017_NonVA)&(SFHA_poly2017_NonVA!=.)
+*2030 revised
+replace fldzone_2017=fldzone_poly2017 if fldzone_2017!=fldzone_poly2017&(SFHA_poly2017_NonVA!=.)
+*7206 revised
+replace statbfe_2017=statbfe_poly2017 if statbfe_2017!=statbfe_poly2017&(SFHA_poly2017_NonVA!=.)
+*7206 revised
+
+*2019 Building SFHA assignment based on building poly - NonVA
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\buildingpolyNonVA_2019SFHA.dta",keepusing(SFHA_poly2019_NonVA fld_zonepoly_NonVA static_bfepoly_NonVA)
+ren fld_zonepoly_NonVA fldzone_poly2019_NonVA
+ren static_bfepoly_NonVA statbfe_poly2019_NonVA
+drop _merge
+tab SFHA_2019 SFHA_poly2019_NonVA
+*revise flood zone factors according to polygon SFHA results
+replace SFHA_2019=SFHA_poly2019_NonVA if (SFHA_2019!=SFHA_poly2019_NonVA)&(SFHA_poly2019_NonVA!=.)
+*2008 revised
+replace fldzone_2019=fldzone_poly2019 if fldzone_2019!=fldzone_poly2019&(SFHA_poly2019_NonVA!=.)
+*7061 revised
+replace statbfe_2019=statbfe_poly2019 if statbfe_2019!=statbfe_poly2019&(SFHA_poly2019_NonVA!=.)
+*7061 revised
+
+
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\NearSFHA12boundary.dta",keepusing(Dist_12SFHA_B)
 drop if _merge==2
 drop _merge 
 replace Dist_12SFHA_B=-Dist_12SFHA_B if SFHA_2012==1
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\NearSFHA17boundary.dta",keepusing(Dist_17SFHA_B)
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\NearSFHA17boundary.dta",keepusing(Dist_17SFHA_B)
 drop if _merge==2
 drop _merge 
 replace Dist_17SFHA_B=-Dist_17SFHA_B if SFHA_2017==1
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\NearSFHA19boundary.dta",keepusing(Dist_19SFHA_B)
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\NearSFHA19boundary.dta",keepusing(Dist_19SFHA_B)
 drop if _merge==2
 drop _merge 
 replace Dist_19SFHA_B=-Dist_19SFHA_B if SFHA_2019==1
 
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\propertybrev_sandysurge.dta",keepusing(Sandysurge_feet)
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\propertybrev_sandysurge.dta",keepusing(Sandysurge_feet)
 replace Sandysurge_feet=0 if Sandysurge_feet==.
 drop _merge
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\propertybrev_irenesurge.dta",keepusing(Irenesurge_feet)
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\propertybrev_irenesurge.dta",keepusing(Irenesurge_feet)
 replace Irenesurge_feet=0 if Irenesurge_feet==.
 drop _merge
 
-merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta\waterfront_oneunitct.dta",keepusing(Waterfronttype)
+merge 1:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\waterfront_oneunitct.dta",keepusing(Waterfronttype)
 gen Waterfront_ocean=(Waterfronttype=="W")
 gen Waterfront_river=(Waterfronttype=="R")
 gen Waterfront_street=(Waterfronttype=="S")
@@ -303,7 +347,7 @@ drop _merge
 gen Wrong_point_NONVA=1 if diff_address==1
 tab Wrong_point_NONVA
 
-*drop if Wrong_point_VA==1&buildingAM_rev!=1 (754)
+count if Wrong_point_VA==1&buildingAM_rev!=1 /*(742)*/
 drop if Wrong_point_VA==1&buildingAM_rev!=1&Wrong_point_NONVA==1
 /*restriction drop 602 points that identified as wrong according to VA revision and not picked up by the NONVA revision*/
 drop if Wrong_point_NONVA==1
@@ -359,7 +403,6 @@ save "$dta0\oneunitcoastsale_Geo.dta",replace
 ************************************
 *   End merge with GIS variables   *
 ************************************
-
 
 
 ************************************
