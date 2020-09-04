@@ -43,7 +43,6 @@ duplicates drop ImportParcelID e_Year,force
 /*restriction 288,585 dropped*/
 drop markForAdd numToAdd dup1 missing_AssYear R_dup1_Ass missing_num R_dup1
 
-
 sort ImportParcelID PropertyFullStreetAddress PropertyCity LegalTownship e_Year
 * populate one-parcel-consecutive-years where SQFT are missing
 foreach v of varlist NoOfBuildings TotalCalculatedBathCount SQFTBAG SQFTBAL SQFTBASE LotSizeSquareFeet{
@@ -66,16 +65,19 @@ foreach yr of numlist 2016/1994{
 sort *
 save "$dta0\Allassess_oneunitcoastal_nodup.dta",replace
 tab e_Year
-duplicates report PropertyFullStreetAddress PropertyCity LegalTownship if PropertyFullStreetAddress!=""
+duplicates report PropertyFullStreetAddress PropertyCity LegalTownship if PropertyFullStreetAddress!=""&LegalTownship!="DARIEN"&LegalTownship!="GREENWICH"&LegalTownship!="STAMFORD" &e_Year>=1998
 di r(unique_value)
-
+*205080
+joinby ImportParcelID using"$Zitrax\dta\transaction_property_09.dta"
+duplicates report PropertyFullStreetAddress PropertyCity LegalTownship if PropertyFullStreetAddress!=""&LegalTownship!="DARIEN"&LegalTownship!="GREENWICH"&LegalTownship!="STAMFORD" &e_Year>=1998
+di r(unique_value)
+*
 
 use "$dta0\Allassess_oneunitcoastal_nodup.dta",clear
 keep ImportParcelID PropertyFullStreetAddress PropertyCity e_TotalAssessedValue e_AssessmentYear e_Year
 sort *
 *duplicates report PropertyFullStreetAddress PropertyCity e_Year
 save "$dta0\AllassessValue_oneunitcoastal_nodup.dta",replace
-
 
 clear all
 set more off
@@ -85,15 +87,41 @@ use "$Zitrax\dta\transaction_09.dta",clear
 set seed 1234567
 merge 1:m TransId using"$Zitrax\dta\transaction_property_09.dta",keepusing(AssessorParcelNumber ImportParcelID PropertyFullStreetAddress PropertyCity)
 drop if _merge!=3
-*All matched with ImportParcelID (5.3m)
+*All matched with ImportParcelID (5.36m)
 
+*136 variables
+*revise price based on VGS data (revision list-already merged with ZTRAX identifiers) here
+drop _merge
+merge m:1 PropertyFullStreetAddress PropertyCity TransId RecordingDate using"$dta0\Reviselist_VGS_branford.dta"
+tab IntVGS if _merge!=.
+drop if IntVGS=="VGS unique" 
+gen ZTRAXuniq=1 if IntVGS=="ZTRAX unique" 
+replace SalesPriceAmount=price_VGS if IntVGS=="In both but diff prices" 
+replace SalesPriceAmount=price_VGS if IntVGS=="In both ZTRAX price missing" 
+tab DataClassStndCode if IntVGS=="In both ZTRAX price missing" 
+replace DataClassStndCode="H" if DataClassStndCode=="M"&IntVGS=="In both ZTRAX price missing" 
+
+foreach town in bridgeport clinton eastlyme fairfield madison milford newhaven newlondon oldlyme norwalk oldsaybrook stamford stratford waterford westbrook westport{
+drop _merge
+capture drop IntVGS
+capture drop dup_ZTRAX
+merge m:1 PropertyFullStreetAddress PropertyCity TransId RecordingDate using"$dta0\Reviselist_VGS_`town'.dta", update
+tab IntVGS if _merge!=.
+drop if IntVGS=="VGS unique" 
+replace ZTRAXuniq=1 if IntVGS=="ZTRAX unique" 
+replace SalesPriceAmount=price_VGS if IntVGS=="In both but diff prices" 
+replace SalesPriceAmount=price_VGS if IntVGS=="In both ZTRAX price missing" 
+tab DataClassStndCode if IntVGS=="In both ZTRAX price missing" 
+replace DataClassStndCode="H" if DataClassStndCode=="M"&IntVGS=="In both ZTRAX price missing" 
+}
+
+*Check sales
 count if ImportParcelID==.
 *drop obs for which we cannot get attributes and geographics
 drop if ImportParcelID==.&AssessorParcelNumber==""&(trim(PropertyFullStreetAddress)=="0"|trim(PropertyFullStreetAddress)=="")
 drop if (trim(PropertyFullStreetAddress)=="0"|trim(PropertyFullStreetAddress)=="")
 /*restriction 81,400 dropped*/
 *Later, try merge with address or AssessorParcelNumber if ImportParcelID is missing
-
 
 *Deleting non-armslength here 
 tab IntraFamilyTransferFlag
@@ -105,7 +133,6 @@ drop if PropertyUseStndCode=="CM" /*restriction commercial 68,139 dropped*/
 drop if PropertyUseStndCode=="IN" /*restriction industrial 12,577 dropped*/
 drop if PropertyUseStndCode=="EX" /*restriction exempt 3,952 dropped*/
 
-
 tab DataClassStndCode
 tab DataClassStndCode, sum(SalesPriceAmount)
 
@@ -115,7 +142,7 @@ keep if DataClassStndCode=="D"|DataClassStndCode=="H"|DataClassStndCode=="F"
 /*restriction 2,820,494 dropped*/
 tab DataClassStndCode, sum(LoanAmount)
 
-*754k deed records, 1,325,962 refinance records (deed with cocurrent mortgage)
+*709k deed without m, 1,321,936 finance records (deed with cocurrent mortgage)
 tab DocumentTypeStndCode
 /*Major categories might not be full market value:   DELU (in lieu of foreclosure documents), 
        EXDE (executor's deed), 
@@ -197,9 +224,9 @@ drop if DataClassStndCode=="F"
 
 *Drop possible foreclosure sales (within in 1yr or 2yrs after default)
 drop if nonARMS_sat1==1
-/*restriction  91,850 dropped*/
+/*restriction  91,766 dropped*/
 drop if nonARMS_sat2==1
-/*restriction  20,931 dropped*/
+/*restriction  21,019 dropped*/
 
 gen withloan=(LoanAmount>0&LoanAmount!=.)
 keep TransId AssessorParcelNumber ImportParcelID PropertyFullStreetAddress PropertyCity SalesPriceAmount SalesPriceAmountStndCode LoanAmount LoanRateTypeStndCode /// 
@@ -218,9 +245,9 @@ duplicates report TransId
 gen N=_n
 sort TransId N 
 duplicates drop TransId,force
-/*restriction 568 dropped*/
+/*restriction 610 dropped*/
 drop N
-
+save "$dta0\sales_nonarmsprocessed_dropforeclosure.dta",replace
 
 merge 1:m TransId using"$Zitrax\dta\transaction_buyer_09.dta",keepusing(BuyerLastName BuyerIndividualFullName BuyerNonIndividualName)
 drop if _merge==2
@@ -233,9 +260,10 @@ drop v7 v8 v9 v10
 drop SellerFirstMiddleName SellerNameSequenceNumber
 drop _merge
 
-
+duplicates drop
+*1,161 duplicates dropped
 duplicates report TransId
-
+sort *
 egen TransId_rank=rank(_n),by(TransId)
 reshape wide BuyerLastName BuyerIndividualFullName BuyerNonIndividualName SellerLastName SellerIndividualFullName SellerNonIndividualName, i(TransId) j(TransId_rank)
 duplicates report TransId
@@ -243,14 +271,17 @@ duplicates report TransId
 ren SalesPriceAmount SalesPrice
 *identify multiple parcel sale
 *Same buyer name, and record date
-duplicates report RecordingDate SalesPrice DataClassStndCode BuyerLastName1 BuyerIndividualFullName1 BuyerNonIndividualName1 BuyerLastName2 BuyerIndividualFullName2 BuyerNonIndividualName2
+/*
+duplicates report RecordingDate SalesPrice DataClassStndCode ///
+BuyerLastName1 BuyerIndividualFullName1 BuyerNonIndividualName1 ///
+BuyerLastName2 BuyerIndividualFullName2 BuyerNonIndividualName2
 *Add seller name 
 duplicates report RecordingDate SalesPrice DataClassStndCode /// 
 BuyerLastName1 BuyerIndividualFullName1 BuyerNonIndividualName1 ///
 BuyerLastName2 BuyerIndividualFullName2 BuyerNonIndividualName2 ///
 SellerLastName1 SellerIndividualFullName1 SellerNonIndividualName1 ///
 SellerLastName2 SellerIndividualFullName2 SellerNonIndividualName2
-
+*/
 duplicates tag RecordingDate SalesPrice DataClassStndCode /// 
 BuyerLastName1 BuyerIndividualFullName1 BuyerNonIndividualName1 ///
 BuyerLastName2 BuyerIndividualFullName2 BuyerNonIndividualName2 ///
@@ -264,9 +295,9 @@ SellerLastName1 SellerIndividualFullName1 SellerNonIndividualName1 ///
 SellerLastName2 SellerIndividualFullName2 SellerNonIndividualName2
 *drop all identified multiple sales
 drop if Mul_sale==1
-/*restriction 6,848 dropped */
+/*restriction 11,076 dropped */
 drop Mul_sale
-
+save "$dta0\sales_nonarmsprocessed_dropmultiplesale.dta",replace
 
 *Generate indicator showing buyer seller having the same last name
 gen BS_SameLast=1 if BuyerLastName1==SellerLastName1|BuyerLastName1==SellerLastName2|BuyerLastName2==SellerLastName1|BuyerLastName2==SellerLastName2
@@ -343,7 +374,7 @@ gen matched_add=(_merge==3)
 drop _merge
 drop if matched_PID==0&matched_add==0
 drop matched_PID matched_add
-/*restriction 1,258,243 dropped-dropping those will be not matched with property data (outside the coastal towns or not included in ZTRAX data)*/
+/*restriction 1,261,942 dropped-dropping those will be not matched with property data (outside the coastal towns or not included in ZTRAX data)*/
 
 
 gen TransactionYear=substr(RecordingDate,1,4)
@@ -353,7 +384,6 @@ foreach n of numlist 0/12{
 	egen ratio`n' = mean(_ratio`n'), by(TransId)
 }
 *_ratio0-_ratio8 meaning the price ratio over AV 6 years before to 6 years after
-
 
 * ratio clean up 
 *Revise the price ratio based on the whole assessment value history to avoid major measurement error
@@ -376,21 +406,23 @@ count if BS_relation==1
 count if BS_relation==1&(ratioToUse<.8 | ratioToUse>1.2 | ratioToUse==99)
 
 drop if BS_relation==1&(ratioToUse<.8 | ratioToUse>1.2 | ratioToUse==99)
-/*restriction 4,440 dropped*/
+/*restriction 4,254 dropped*/
 drop if LB_relation==1&(ratioToUse<.8 | ratioToUse>1.2 | ratioToUse==99)
 /*restriction 6 dropped*/
 
 *drop transactions with participants with nonARMS terms 
 drop if nonARMS_termmark==1&(ratioToUse<.8 | ratioToUse>1.2 | ratioToUse==99)
-/*restriction 18,991 dropped*/
+/*restriction 18,931 dropped*/
+save "$dta0\sales_nonarmsprocessed_dropbuysellrelation.dta",replace
 
-
+use "$dta0\sales_nonarmsprocessed_dropbuysellrelation.dta",clear
 tab TransactionYear
 ren TransactionYear e_Year
 
 *Transfer Prices in 2017 dollar
 *Inflation Rate is based on Bureau of Labor Statistics CPI
 *The first sale is in 1994
+
 replace SalesPrice=SalesPrice*1.80 if e_Year==1991
 replace SalesPrice=SalesPrice*1.74 if e_Year==1992
 replace SalesPrice=SalesPrice*1.69 if e_Year==1993
@@ -417,36 +449,35 @@ replace SalesPrice=SalesPrice*1.05 if e_Year==2013
 replace SalesPrice=SalesPrice*1.03 if e_Year==2014
 replace SalesPrice=SalesPrice*1.03 if e_Year==2015
 replace SalesPrice=SalesPrice*1.02 if e_Year==2016
-
-
+replace SalesPrice=SalesPrice*0.98 if e_Year==2018
+replace SalesPrice=SalesPrice*0.96 if e_Year==2019
+*No sales in 2018, 2019
 *drop transactions with prices that are too low
 drop if SalesPrice<1000
-/*restriction 5,076 dropped*/
+/*restriction 3,994 dropped*/
 
 *drop price outlier
 sum SalesPrice,detail
 *p1=35970  p99=3835000
 drop if SalesPrice<=r(p1)|SalesPrice>=r(p99)
-/*restriction 4,903 dropped */
+/*restriction 5,212 dropped */
 
 *drop Price ratio outlier
 sum ratioToUse if ratioToUse!=99,d
 drop if (ratioToUse<r(p1)|ratioToUse>r(p99))&ratioToUse!=99
-/*restriction 3,760 dropped- those ratiotouse==99 will not present in the final dataset, because of the lack of corresponding assessment info*/
+/*restriction 4,058 dropped- those ratiotouse==99 will not present in the final dataset, because of the lack of corresponding assessment info*/
 drop ratioToUse
-
 
 count if e_Year>=2005
 count if e_Year>=1994
 
 tab SalesPriceAmountStndCode
-drop if SalesPriceAmountStndCode=="NA"|SalesPriceAmountStndCode=="CU"  /*NA is non ARMS, CU is unknown if price is full or partial*/
-/*restriction  989 dropped*/
+drop if SalesPriceAmountStndCode=="NA"|SalesPriceAmountStndCode=="CU"|SalesPriceAmountStndCode=="NO"  /*NA is non ARMS, CU is unknown if price is full or partial*/
+/*restriction 1,737 dropped*/
 tab e_Year if ImportParcelID==.
 gen ha_ImportParcelID=ImportParcelID
 save "$dta0\sales_nonarmsprocessed.dta",replace
 *********************************************************************************
 *      End process transaction data, processed non-armslength transactions      *
 *********************************************************************************
-
 

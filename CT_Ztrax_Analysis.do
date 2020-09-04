@@ -12,6 +12,9 @@ global Zitrax ""
 global GISdata ""
 
 
+* install package here
+ssc install reghdfe
+ssc install ftools
 *********************
 *      Matching     *
 ********************* 
@@ -25,8 +28,6 @@ drop if LegalTownship=="DARIEN"|LegalTownship=="GREENWICH"|LegalTownship=="STAMF
 gen urban=1 if LegalTownship=="BRIDGEPORT"|LegalTownship=="NEW HAVEN"|LegalTownship=="New London"
 replace urban=0 if urban==.
 *
-tab SalesPriceAmountStndCode
-*Now we have 92,016 prices, 85,098 are confirmed to be backed up by (closing) documents.
 
 *lnPrice
 gen Ln_Price=ln(SalesPrice)
@@ -34,33 +35,44 @@ tab SalesYear
 tab SalesMonth
 
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth
+gen neg_transprice=-SalesPrice
+
+duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate, gen(dupsale)
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year RecordingDate neg_transprice *
+duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate,force
+/*restriction 6925 duplicate records dropped*/
+
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth,gen(duptrans)
 tab duptrans
-gen neg_transprice=-SalesPrice
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice
-drop if duptrans>=1 /*restriction 3,246 dup transactions within the same month drops, likely including house flippers*/
-capture drop duptrans neg_transprice
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice *
+drop if duptrans>=1 /*restriction 396 dup transactions within the same month drops, likely including house flippers*/
+capture drop duptrans dupsale neg_transprice
 
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship,gen(NoOfTrans)
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year *
 replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+tab SalesPriceAmountStndCode
+*Now we have 88,152 prices, 84,173 are confirmed to be backed up by (closing) documents.
+
+*Drop observations before 1998 (only three towns, GIS data maybe inaccurate for older sales)
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
-*drop possible house flipping events
+*drop possible house flipping events (within the same season)
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
 gen neg_transprice=-SalesPrice
 sort PropertyFullStreetAddress PropertyCity LegalTownship period neg_transprice TransId
 tab duptrans
-duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship period duptrans,force
+drop if duptrans>=1 /*restriction 328 dup transactions within the same season drops, likely including house flippers*/
 capture drop duptrans neg_transprice
 
 *Creating categorical Match variables 
@@ -77,7 +89,6 @@ gen SalewithLoan=(DataClassStndCode=="H")
 
 *Block median income
 drop if Block_MedInc==.
-hist Block_MedInc
 gen rich_neighbor=(Block_MedInc>=150000)
 tab rich_neighbor
 
@@ -91,19 +102,22 @@ Matching on era is too coarse*/
 egen town=group(LegalTownship)
 drop if town==.
 drop if fid_school==.
+egen Tract=group(tractce)
+*219 tracts
+egen Block=group(tractce blkgrpce)
 *CRS towns
 gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTownship=="STAMFORD"|LegalTownship=="STONINGTON"|LegalTownship=="WEST HARTFORD"|LegalTownship=="WESTPORT"
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
-*FIPS 9007 (Middlesex has no more than 7 obs annually before 2001)
-drop if FIPS==9007&e_Year<2001
+*Dropping since very few sales are in middlesex county before 2000
+drop if FIPS==9007&e_Year<=2000
 
-global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
 *Potential Categorical Match: e_Year SalewithLoan Band FIPS(county) fid_school town AirCondition e_Pool sewer_service BuildingCondition HeatingType
 global Match_cat "e_Year SalewithLoan Band rich_neighbor urban"
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
@@ -128,8 +142,8 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-/*restriction 1574 dropped */
-*135 treated dropped here (do not have two treated in one cell or have less than 4 potentially paried controls)
+/*restriction 1318 dropped */
+*125 treated dropped here (do not have two treated in one cell or have less than 4 potentially paried controls)
 
 *Simple NNMatching
 capture drop nn*
@@ -140,7 +154,7 @@ capture teffects nnmatch (SalesPrice $Match_continue)(SFHA), tlevel(1) ematch($M
 replace os1=. if os1==0
 tab os1
 egen Cellos=mean(os1),by($Match_cat)
-*34 treated dropped here, 964 total dropped
+*40 treated dropped here, 772 total dropped
 drop if Cellos==1
 
 reg SalesPrice SFHA
@@ -148,12 +162,12 @@ eststo Mean_diff
 
 duplicates report PropertyFullStreetAddress PropertyCity LegalTownship
 di r(unique_value)
-*86837 transactions - 63381 properties
+*90,652 transactions - 65508 properties
 
 tab SFHA
 duplicates report PropertyFullStreetAddress PropertyCity LegalTownship if SFHA==1
 di r(unique_value)
-*9278 SFHA transactions - 6834 properties
+*9,623 SFHA transactions - 7040 properties
 
 capture drop os2
 capture drop nn*
@@ -168,20 +182,14 @@ ferences are greater than 0.15 standard deviations, which is below the suggested
 */
 duplicates report nn1 if SFHA==1&nn1!=.
 di r(unique_value)
-*9278/5954
-/*
-capture drop os2
-capture drop nn*
-*BCME
-teffects nnmatch (SalesPrice $Match_continue)(SFHA), tlevel(1) bias($View2 $X $FE i.fid_school i.period i.period#i.fid_school) ematch($Match_cat) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_overall
-*/
+*9623/6104 -6103
+
 capture drop os2
 capture drop nn*
 *BCME_Ln
 teffects nnmatch (Ln_Price $Match_continue)(SFHA), tlevel(1) bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) ematch($Match_cat) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_Ln_overall
-
+*-.0274757   .0074615    -3.68   0.000    -.0421001   -.0128514
 esttab Mean_diff Matching_overall BCME_Ln_overall using"$results\results_BCMEoverall.csv", keep(SFHA *.SFHA) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 *esttab Mean_diff Matching_overall BCME_overall BCME_Ln_overall using"$results\results_BCMEoverall.csv", keep(SFHA *.SFHA) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
@@ -189,7 +197,6 @@ estat summarize
 gen ID=_n
 capture drop _merge
 save "$dta\data_analysis_tem.dta",replace
-
 
 *Construct the matched sample
 use "$dta\data_analysis_tem.dta",clear
@@ -204,18 +211,21 @@ merge 1:m ID using "$dta\data_analysis_tem.dta"
 replace weight=1 if SFHA==1
 drop _merge
 tab weight
+*gen pweight
+gen weight_inv=210/weight
 save "$dta\data_4analysis.dta",replace
 *******************************************
 *  End Generate Matched Sample (weights)  *
 *******************************************
 
-
 *****************************************
-*      BCME for multiple estimates      *
+*    BCME for by-mortgage estimates     *
 *****************************************
 set more off
 use "$dta\data_analysis_tem.dta",clear
-global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
 
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
 global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
@@ -242,7 +252,7 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*7190/4672
+* 7482/4806
 /*
 capture drop os2
 capture drop nn*
@@ -254,8 +264,18 @@ capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_Ln_H
 
+set more off
+use "$dta\data_analysis_tem.dta",clear
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
 
-set seed 1234567
+global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
+global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+
+global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
+
 capture drop os1
 capture drop nn*
 capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
@@ -266,6 +286,7 @@ egen Cellos=mean(os1),by($Match_cat SalewithLoan)
 * treated dropped here,  total dropped
 drop if Cellos==1
 
+set seed 123456789
 capture drop os2
 capture drop nn*
 teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -273,13 +294,15 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*2088/1354
+* 2136/1402
 /*
 capture drop os2
 capture drop nn*
 teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_D
 */
+set seed 123456789
+sort *
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
@@ -301,7 +324,6 @@ gen urban=1 if LegalTownship=="BRIDGEPORT"|LegalTownship=="NEW HAVEN"|LegalTowns
 replace urban=0 if urban==.
 *
 tab SalesPriceAmountStndCode
-*Now we have 89,000 prices, 82,459 are confirmed to be backed up by (closing) documents.
 
 *lnPrice
 gen Ln_Price=ln(SalesPrice)
@@ -309,33 +331,44 @@ tab SalesYear
 tab SalesMonth
 
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth
+gen neg_transprice=-SalesPrice
+
+duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate, gen(dupsale)
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year RecordingDate neg_transprice *
+duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate,force
+/*restriction 6925 duplicate records dropped*/
+
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth,gen(duptrans)
 tab duptrans
-gen neg_transprice=-SalesPrice
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice
-drop if duptrans>=1 /*restriction 3,246 dup transactions within the same month drops, likely including house flippers*/
-capture drop duptrans neg_transprice
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice *
+drop if duptrans>=1 /*restriction 396 dup transactions within the same month drops, likely including house flippers*/
+capture drop duptrans dupsale neg_transprice
 
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship,gen(NoOfTrans)
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year *
 replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+tab SalesPriceAmountStndCode
+*Now we have 88,152 prices, 84,173 are confirmed to be backed up by (closing) documents.
+
+*Drop observations before 1998 (only three towns, GIS data maybe inaccurate for older sales)
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
-*drop possible house flipping events
+*drop possible house flipping events (within the same season)
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
 gen neg_transprice=-SalesPrice
 sort PropertyFullStreetAddress PropertyCity LegalTownship period neg_transprice TransId
 tab duptrans
-duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship period duptrans,force
+drop if duptrans>=1 /*restriction 328 dup transactions within the same season drops, likely including house flippers*/
 capture drop duptrans neg_transprice
 
 *Creating categorical Match variables 
@@ -352,7 +385,6 @@ gen SalewithLoan=(DataClassStndCode=="H")
 
 *Block median income
 drop if Block_MedInc==.
-hist Block_MedInc
 gen rich_neighbor=(Block_MedInc>=150000)
 tab rich_neighbor
 
@@ -366,28 +398,28 @@ Matching on era is too coarse*/
 egen town=group(LegalTownship)
 drop if town==.
 drop if fid_school==.
+egen Tract=group(tractce)
+egen Block=group(tractce blkgrpce)
 *CRS towns
 gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTownship=="STAMFORD"|LegalTownship=="STONINGTON"|LegalTownship=="WEST HARTFORD"|LegalTownship=="WESTPORT"
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
 *FIPS 9007 (Middlesex has no more than 7 obs annually before 2001)
 drop if FIPS==9007&e_Year<2001
 
-global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
 *Potential Categorical Match: e_Year SalewithLoan Band FIPS(county) fid_school town AirCondition e_Pool sewer_service BuildingCondition HeatingType
 global Match_cat "e_Year SalewithLoan Band rich_neighbor urban"
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
-global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 
 global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
 tab SFHA
-
 
 tab SFHA if Sandysurge_feet>0|Irenesurge_feet>0
 drop if Sandysurge_feet>0|Irenesurge_feet>0
@@ -408,7 +440,7 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-*86 treated dropped here, 2830 dropped in total
+*71 treated dropped here, 1885 dropped in total
 
 *All transactions
 capture drop nn*
@@ -420,8 +452,10 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat)
-*60 treated dropped here, 1462 total dropped
+*74 treated dropped here, 1465 total dropped
 drop if Cellos==1
+count if SFHA==1
+scalar BCME_nosurge_treat=r(N)
 
 capture drop os2
 capture drop nn*
@@ -432,17 +466,30 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if SFHA==1&nn1!=.
 di r(unique_value)
-*5092/4004
+scalar BCME_nosurge_control=r(unique_value)
 capture drop os2
 capture drop nn*
 *BCME_Ln
 teffects nnmatch (Ln_Price $Match_continue)(SFHA), tlevel(1) bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) ematch($Match_cat) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_Ln_nosurge
+estadd scalar Nobs_treat=BCME_nosurge_treat:BCME_Ln_nosurge
+estadd scalar Nobs_control=BCME_nosurge_control:BCME_Ln_nosurge
 
 gen ID=_n
 capture drop _merge
 save "$dta\data_analysis_tem_nosurge.dta",replace
 
+use "$dta\data_analysis_tem_nosurge.dta",clear
+set seed 1234567
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+
+global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
+global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+
+global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
 *With Loan 
 global Match_cat "e_Year Band rich_neighbor"
 set seed 1234567
@@ -463,12 +510,25 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*3970/3139
+*4168/3268
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_Ln_H_nosurge
 
+use "$dta\data_analysis_tem_nosurge.dta",clear
+set seed 1234567
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+
+global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
+global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+
+global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
+*With Loan 
+global Match_cat "e_Year Band rich_neighbor"
 *Without loan
 set seed 1234567
 capture drop os1
@@ -488,16 +548,13 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if nn1!=.&SFHA==1
 di r(unique_value)
-*1122/865
+*1155/902
 capture drop os2
 capture drop nn*
 teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
 eststo BCME_Ln_D_nosurge
 
 esttab BCME_Ln_nosurge BCME_Ln_H_nosurge BCME_Ln_D_nosurge using"$results\results_BCMEnosurge.csv", keep(*.SFHA) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-
-
-
 
 *Construct the matched sample
 use "$dta\data_analysis_tem_nosurge.dta",clear
@@ -512,8 +569,9 @@ merge 1:m ID using "$dta\data_analysis_tem_nosurge.dta"
 replace weight=1 if SFHA==1
 drop _merge
 tab weight
+*gen pweight
+gen weight_inv=210/weight
 save "$dta\data_4analysis_nosurge.dta",replace
-
 
 *Trend
 set more off
@@ -540,310 +598,17 @@ xtset PID period
 
 *With different sets of fixed effects and specification
 set more off
-eststo RA_ln_noperiod:   reg Ln_Price SFHA $View2 $X $FE i.fid_school [pweight=weight],cluster(PID)
-eststo RA_ln_withperiod: reg Ln_Price SFHA $View2 $X $FE i.fid_school i.period [pweight=weight],cluster(PID)
-eststo RA_ln_withall:    reg Ln_Price SFHA $View2 $X $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
-*Same-with lnSQFTs
-set more off
-eststo RA_ln_noperiodM:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school [pweight=weight],cluster(PID)
-eststo RA_ln_withperiodM:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight],cluster(PID)
-eststo RA_ln_withallM:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
-
-esttab RA_ln_noperiod RA_ln_withperiod RA_ln_withall RA_ln_noperiodM RA_ln_withperiodM RA_ln_withallM using"$results\results_SFHA_RA1_nosurge.csv", keep(SFHA $View2 e_LnSQFT e_LnSQFT_tot e_LnLSQFT $X) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-*RA1-Specification check_table4-0
-
-
-*preIrene - if period<71 postSandy - if period>76
-
+eststo RA_ln_withallM:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
 *Differentiate transactions with and without loans
 set more off
-eststo RA_ln_noperiod_H:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-eststo RA_ln_withperiod_H:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-eststo RA_ln_withall_H:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-
+eststo RA_ln_withall_H:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
 set more off
-eststo RA_ln_noperiod_D:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-eststo RA_ln_withperiod_D:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-eststo RA_ln_withall_D:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-esttab RA_ln_noperiod_H RA_ln_withperiod_H RA_ln_withall_H RA_ln_noperiod_D RA_ln_withperiod_D RA_ln_withall_D using"$results\results_SFHA_RA2_nosurge.csv", keep(SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+eststo RA_ln_withall_D:  reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D",a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
+
+esttab RA_ln_withallM RA_ln_withall_H RA_ln_withall_D using"$results\results_SFHA_RA1_nosurge.csv", keep(SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 *RA2-break up by with loan or not
 
 tab SFHA SalewithLoan if weight!=.
-*********************************************
-*      BCME for different neighborhood      *
-*********************************************
-set more off
-use "$dta\oneunitcoastsale_formatch.dta",clear
-set seed 1234567
-set matsize 11000
-set emptycells drop
-
-drop if LegalTownship=="DARIEN"|LegalTownship=="GREENWICH"|LegalTownship=="STAMFORD"
-gen urban=1 if LegalTownship=="BRIDGEPORT"|LegalTownship=="EAST HAVEN"|LegalTownship=="New London"
-replace urban=0 if urban==.
-*drop if urban==1
-*
-tab SalesPriceAmountStndCode
-*Now we have 89,000 prices, 82,459 are confirmed to be backed up by (closing) documents.
-
-
-*lnPrice
-gen Ln_Price=ln(SalesPrice)
-
-tab SalesYear
-tab SalesMonth
-
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth
-duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth,gen(duptrans)
-tab duptrans
-gen neg_transprice=-SalesPrice
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice
-drop if duptrans>=1 /*restriction 3,246 dup transactions within the same month drops, likely including house flippers*/
-capture drop duptrans neg_transprice
-
-duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship,gen(NoOfTrans)
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
-replace NoOfTrans=NoOfTrans+1
-tab SFHA,sum(SalesPrice)
-tab NoOfTrans
-
-capture drop Quarter
-gen Quarter=1 if SalesMonth>=1&SalesMonth<4
-replace Quarter=2 if SalesMonth>=4&SalesMonth<7
-replace Quarter=3 if SalesMonth>=7&SalesMonth<10
-replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
-capture drop period
-gen period=4*(e_Year-1994)+Quarter
-
-*drop possible house flipping events
-duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
-gen neg_transprice=-SalesPrice
-sort PropertyFullStreetAddress PropertyCity LegalTownship period neg_transprice TransId
-tab duptrans
-duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship period duptrans,force
-capture drop duptrans neg_transprice
-
-*Creating categorical Match variables 
-*Use qualtiles and viewshed availability to devide bands
-sum Dist_Coast if view_analysis==1,d
-gen Band1=(Dist_Coast<=r(p50)&view_analysis==1)
-gen Band2=(Dist_Coast>r(p50)&view_analysis==1)
-gen Band3=(Band1==0&Band2==0)
-gen Band=1 if Band1==1
-replace Band=2 if Band2==1
-replace Band=3 if Band3==1
-
-gen SalewithLoan=(DataClassStndCode=="H")
-
-*Block median income
-drop if Block_MedInc==.
-hist Block_MedInc
-gen lowInc_neighbor=(Block_MedInc<=70000)
-gen normInc_neighbor=(Block_MedInc>70000&Block_MedInc<150000)
-gen rich_neighbor=(Block_MedInc>=150000)
-tab rich_neighbor
-gen neighbor_cat=0 if lowInc_neighbor==1
-replace neighbor_cat=1 if normInc_neighbor==1
-replace neighbor_cat=2 if rich_neighbor==1
-tab neighbor_cat
-
-egen town=group(LegalTownship)
-drop if town==.
-drop if fid_school==.
-*CRS towns
-gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTownship=="STAMFORD"|LegalTownship=="STONINGTON"|LegalTownship=="WEST HARTFORD"|LegalTownship=="WESTPORT"
-replace CRS_town=0 if CRS_town==.
-
-*Check FIPS for each year
-foreach y of numlist 1994/2017 {
-di `y'
-tab FIPS if e_Year==`y'
-}
-*FIPS 9007 (Middlesex has no more than 7 obs annually before 2001)
-drop if FIPS==9007&e_Year<2001
-
-global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
-*Potential Categorical Match: e_Year SalewithLoan Band FIPS(county) fid_school town AirCondition e_Pool sewer_service BuildingCondition HeatingType
-global Match_cat "e_Year SalewithLoan Band neighbor_cat urban"
-global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
-global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
-global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
-
-global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
-tab SFHA
-
-*Drop those cells with less than 2 treated or less than 4 controls (exact match and robust standard errors cannot apply)
-gen I=1
-egen N_torc=total(I), by($Match_cat SFHA)
-gen N_t=N_torc if SFHA==1
-gen N_c=N_torc if SFHA==0
-egen CellN_t=mean(N_t),by($Match_cat)
-egen CellN_c=mean(N_c),by($Match_cat)
-drop I N_torc N_t N_c
-replace CellN_t=0 if CellN_t==.
-replace CellN_c=0 if CellN_c==.
-
-count if CellN_t<2
-gen os=(CellN_t<2|CellN_c<4)
-tab os SFHA
-drop if CellN_t<2|CellN_c<4
-*198 treated dropped, 2261 dropped in total
-
-*use 70000 as low income criterion
-*BCME
-*Low Inc neighbor
-global Match_cat "e_Year Band urban"
-set seed 1234567
-capture drop os1
-capture drop nn*
-capture teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
-replace os1=. if os1==0
-tab os1
-cap drop Cellos
-egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*20 treated dropped here, 250 total dropped
-drop if Cellos==1
-
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-tebalance summarize
-mat list r(table)
-duplicates report nn1 if nn1!=.&SFHA==1
-di r(unique_value)
-*2006/1160
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_LnH_lowInc
-
-set seed 1234567
-capture drop os1
-capture drop nn*
-capture teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
-replace os1=. if os1==0
-tab os1
-cap drop Cellos
-egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*18 treated dropped here, 310 total dropped
-drop if Cellos==1
-
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-tebalance summarize
-mat list r(table)
-duplicates report nn1 if nn1!=.&SFHA==1
-di r(unique_value)
-*573/324
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.urban) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_LnD_lowInc
-
-*Normal Inc neighbor
-global Match_cat "e_Year Band urban"
-set seed 1234567
-capture drop os1
-capture drop nn*
-capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
-replace os1=. if os1==0
-tab os1
-cap drop Cellos
-egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*12 treated dropped here, 316 total dropped
-drop if Cellos==1
-
-capture drop os2
-capture drop nn*
-teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-tebalance summarize
-mat list r(table)
-duplicates report nn1 if nn1!=.&SFHA==1
-di r(unique_value)
-*4155/2884
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_LnH_normInc
-
-
-set seed 1234567
-capture drop os1
-capture drop nn*
-capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
-replace os1=. if os1==0
-tab os1
-cap drop Cellos
-egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*14 treated dropped here, 221 total dropped
-drop if Cellos==1
-
-capture drop os2
-capture drop nn*
-teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-tebalance summarize
-mat list r(table)
-duplicates report nn1 if nn1!=.&SFHA==1
-di r(unique_value)
-*1289/893
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_LnD_normInc
-
-
-*High Inc neighbor
-set seed 1234567
-capture drop os1
-capture drop nn*
-capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
-replace os1=. if os1==0
-tab os1
-cap drop Cellos
-egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*2 treated dropped here, 11 total dropped
-drop if Cellos==1
-
-capture drop os2
-capture drop nn*
-teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-tebalance summarize
-mat list r(table)
-duplicates report nn1 if nn1!=.&SFHA==1
-di r(unique_value)
-*971/564
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_LnH_HighInc
-
-
-set seed 1234567
-capture drop os1
-capture drop nn*
-capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
-replace os1=. if os1==0
-tab os1
-cap drop Cellos
-egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
-*10 treated dropped here, 283 total dropped
-drop if Cellos==1
-
-capture drop os2
-capture drop nn*
-teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-tebalance summarize
-mat list r(table)
-duplicates report nn1 if nn1!=.&SFHA==1
-di r(unique_value)
-*179/90
-capture drop os2
-capture drop nn*
-teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.urban) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
-eststo BCME_LnD_HighInc
-
-esttab BCME_LnH_lowInc BCME_LnH_normInc BCME_LnH_HighInc BCME_LnD_lowInc BCME_LnD_normInc BCME_LnD_HighInc using"$results\results_BCME_neighborInc.csv", keep(*.SFHA) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 ***************************************************
 *   Matched Regression for different Inc groups   *
@@ -858,38 +623,47 @@ gen urban=1 if LegalTownship=="BRIDGEPORT"|LegalTownship=="EAST HAVEN"|LegalTown
 replace urban=0 if urban==.
 *drop if urban==1
 tab SalesPriceAmountStndCode
-*Now we have 89,000 prices, 82,459 are confirmed to be backed up by (closing) documents.
 
 *lnPrice
 gen Ln_Price=ln(SalesPrice)
 tab SalesYear
 tab SalesMonth
+
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth
+gen neg_transprice=-SalesPrice
+
+duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate, gen(dupsale)
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year RecordingDate neg_transprice *
+duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate,force
+/*restriction 6925 duplicate records dropped*/
+
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth,gen(duptrans)
 tab duptrans
-gen neg_transprice=-SalesPrice
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice
-drop if duptrans>=1 /*restriction 3,246 dup transactions within the same month drops, likely including house flippers*/
-capture drop duptrans neg_transprice
+drop if duptrans>=1 /*restriction 396 dup transactions within the same month drops, likely including house flippers*/
+capture drop duptrans dupsale neg_transprice
+
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship,gen(NoOfTrans)
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
 replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
-*drop possible house flipping events
+gen period=4*(e_Year-1998)+Quarter
+
+*drop possible house flipping events (within the same season)
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
 gen neg_transprice=-SalesPrice
 sort PropertyFullStreetAddress PropertyCity LegalTownship period neg_transprice TransId
 tab duptrans
-duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship period duptrans,force
+drop if duptrans>=1 /*restriction 328 dup transactions within the same season drops, likely including house flippers*/
 capture drop duptrans neg_transprice
 
 *Creating categorical Match variables 
@@ -906,7 +680,6 @@ gen SalewithLoan=(DataClassStndCode=="H")
 
 *Block median income
 drop if Block_MedInc==.
-hist Block_MedInc
 gen lowInc_neighbor=(Block_MedInc<=70000)
 gen normInc_neighbor=(Block_MedInc>70000&Block_MedInc<150000)
 gen rich_neighbor=(Block_MedInc>=150000)
@@ -919,23 +692,24 @@ tab neighbor_cat
 egen town=group(LegalTownship)
 drop if town==.
 drop if fid_school==.
+egen Tract=group(tractce)
+egen Block=group(tractce blkgrpce)
 *CRS towns
 gen CRS_town=1 if LegalTownship=="EAST LYME"|LegalTownship=="MILFORD"|LegalTownship=="STAMFORD"|LegalTownship=="STONINGTON"|LegalTownship=="WEST HARTFORD"|LegalTownship=="WESTPORT"
 replace CRS_town=0 if CRS_town==.
 
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
-*FIPS 9007 (Middlesex has no more than 7 obs annually before 2001)
+*FIPS 9007 (13 dropped Middlesex has no more than 7 obs annually before 2001)
 drop if FIPS==9007&e_Year<2001
 
-global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
 *Potential Categorical Match: e_Year SalewithLoan Band FIPS(county) fid_school town AirCondition e_Pool sewer_service BuildingCondition HeatingType
 global Match_cat "e_Year SalewithLoan Band neighbor_cat urban"
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
-global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 
 global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
@@ -956,7 +730,7 @@ count if CellN_t<2
 gen os=(CellN_t<2|CellN_c<4)
 tab os SFHA
 drop if CellN_t<2|CellN_c<4
-*198 treated dropped, 2261 dropped in total
+*181 treated dropped, 1807 dropped in total
 
 *All transactions
 capture drop nn*
@@ -968,7 +742,7 @@ replace os1=. if os1==0
 tab os1
 cap drop Cellos
 egen Cellos=mean(os1),by($Match_cat)
-*76 treated dropped here, 1391 total dropped
+*62 treated dropped here, 818 total dropped
 drop if Cellos==1
 
 capture drop os2
@@ -980,11 +754,10 @@ tebalance summarize
 mat list r(table)
 duplicates report nn1 if SFHA==1&nn1!=.
 di r(unique_value)
-
+*9538/6045
 gen ID=_n
 capture drop _merge
 save "$dta\data_analysis_neighborhoodtem.dta",replace
-
 
 *Construct the matched sample
 use "$dta\data_analysis_neighborhoodtem.dta",clear
@@ -999,6 +772,8 @@ merge 1:m ID using "$dta\data_analysis_neighborhoodtem.dta"
 replace weight=1 if SFHA==1
 drop _merge
 tab weight
+*gen pweight
+gen weight_inv=210/weight
 save "$dta\data_4analysis_neighborhood.dta",replace
 
 set more off
@@ -1015,10 +790,7 @@ replace BFE=0 if BFE==.
 
 global View1 "Lisview_area total_viewangle Lisview_mnum Lisview_ndist"
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
-
-global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
-
 global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
 
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
@@ -1029,24 +801,238 @@ tab SFHA neighbor_cat if DataClassStndCode=="H"&weight!=.
 tab SFHA neighbor_cat if DataClassStndCode=="D"&weight!=.
 *RA
 set more off
-eststo RA_lnH_neighbor_LowInc:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H"&neighbor_cat==0 ,cluster(PID)
-eststo RA_lnH_neighbor_NormInc:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H"&neighbor_cat==1 ,cluster(PID)
-eststo RA_lnH_neighbor_HighInc:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H"&neighbor_cat==2 ,cluster(PID)
+eststo RA_lnH_neighbor_LowInc:   reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if DataClassStndCode=="H"&neighbor_cat==0 , a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
+eststo RA_lnH_neighbor_NormInc:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H"&neighbor_cat==1 , a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
+eststo RA_lnH_neighbor_HighInc:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H"&neighbor_cat==2 , a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
+
+count if SFHA==1&SalewithLoan==1&weight!=.&neighbor_cat==0
+estadd scalar Nobs_treat=r(N):RA_lnH_neighbor_LowInc
+count if SFHA==0&SalewithLoan==1&weight!=.&neighbor_cat==0
+estadd scalar Nobs_control=r(N):RA_lnH_neighbor_LowInc
+count if SFHA==1&SalewithLoan==1&weight!=.&neighbor_cat==1
+estadd scalar Nobs_treat=r(N):RA_lnH_neighbor_NormInc
+count if SFHA==0&SalewithLoan==1&weight!=.&neighbor_cat==1
+estadd scalar Nobs_control=r(N):RA_lnH_neighbor_NormInc
+count if SFHA==1&SalewithLoan==1&weight!=.&neighbor_cat==2
+estadd scalar Nobs_treat=r(N):RA_lnH_neighbor_HighInc
+count if SFHA==0&SalewithLoan==1&weight!=.&neighbor_cat==2
+estadd scalar Nobs_control=r(N):RA_lnH_neighbor_HighInc
 
 set more off
-eststo RA_lnD_neighbor_LowInc:    reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D"&neighbor_cat==0,cluster(PID)
-eststo RA_lnD_neighbor_NormInc:    reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D"&neighbor_cat==1,cluster(PID)
-eststo RA_lnD_neighbor_HighInc:    reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D"&neighbor_cat==2,cluster(PID)
+eststo RA_lnD_neighbor_LowInc:    reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D"&neighbor_cat==0, a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
+eststo RA_lnD_neighbor_NormInc:    reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D"&neighbor_cat==1, a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
+eststo RA_lnD_neighbor_HighInc:    reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D"&neighbor_cat==2, a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
 
-esttab RA_lnH_neighbor_LowInc RA_lnH_neighbor_NormInc RA_lnH_neighbor_HighInc RA_lnD_neighbor_LowInc RA_lnD_neighbor_NormInc RA_lnD_neighbor_HighInc using"$results\results_RA_neighborbyloan.csv", keep(SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+count if SFHA==1&SalewithLoan==0&weight!=.&neighbor_cat==0
+estadd scalar Nobs_treat=r(N):RA_lnD_neighbor_LowInc
+count if SFHA==0&SalewithLoan==0&weight!=.&neighbor_cat==0
+estadd scalar Nobs_control=r(N):RA_lnD_neighbor_LowInc
+count if SFHA==1&SalewithLoan==0&weight!=.&neighbor_cat==1
+estadd scalar Nobs_treat=r(N):RA_lnD_neighbor_NormInc
+count if SFHA==0&SalewithLoan==0&weight!=.&neighbor_cat==1
+estadd scalar Nobs_control=r(N):RA_lnD_neighbor_NormInc
+count if SFHA==1&SalewithLoan==0&weight!=.&neighbor_cat==2
+estadd scalar Nobs_treat=r(N):RA_lnD_neighbor_HighInc
+count if SFHA==0&SalewithLoan==0&weight!=.&neighbor_cat==2
+estadd scalar Nobs_control=r(N):RA_lnD_neighbor_HighInc
+esttab RA_lnH_neighbor_LowInc RA_lnH_neighbor_NormInc RA_lnH_neighbor_HighInc RA_lnD_neighbor_LowInc RA_lnD_neighbor_NormInc RA_lnD_neighbor_HighInc using"$results\results_RA_neighborbyloan.csv", keep(SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2 Nobs_treat Nobs_control)
 
 
+*********************************************
+*      BCME for different neighborhood      *
+*********************************************
+*use 70000 as low income criterion
+*BCME
+set more off
+use "$dta\data_analysis_neighborhoodtem.dta",clear
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+
+global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
+global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+
+global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
+
+*Low Inc neighbor
+global Match_cat "e_Year Band urban"
+set seed 1234567
+capture drop os1
+capture drop nn*
+capture teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
+replace os1=. if os1==0
+tab os1
+cap drop Cellos
+egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
+*0 treated dropped here, 0 total dropped
+drop if Cellos==1
+
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+tebalance summarize
+mat list r(table)
+duplicates report nn1 if nn1!=.&SFHA==1
+di r(unique_value)
+*2079/1185
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+eststo BCME_LnH_lowInc
+
+set seed 1234567
+capture drop os1
+capture drop nn*
+capture teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
+replace os1=. if os1==0
+tab os1
+cap drop Cellos
+egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
+*0 treated dropped here, 0 total dropped
+drop if Cellos==1
+
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+tebalance summarize
+mat list r(table)
+duplicates report nn1 if nn1!=.&SFHA==1
+di r(unique_value)
+*573/333
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==0&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.urban) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+eststo BCME_LnD_lowInc
+
+set more off
+use "$dta\data_analysis_neighborhoodtem.dta",clear
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+
+global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
+global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+
+global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
+
+*Normal Inc neighbor
+global Match_cat "e_Year Band urban"
+set seed 1234567
+capture drop os1
+capture drop nn*
+capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
+replace os1=. if os1==0
+tab os1
+cap drop Cellos
+egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
+*0 treated dropped here, 0 total dropped
+drop if Cellos==1
+
+capture drop os2
+capture drop nn*
+teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+tebalance summarize
+mat list r(table)
+duplicates report nn1 if nn1!=.&SFHA==1
+di r(unique_value)
+*4338/2971
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+eststo BCME_LnH_normInc
+
+set seed 1234567
+capture drop os1
+capture drop nn*
+capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
+replace os1=. if os1==0
+tab os1
+cap drop Cellos
+egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
+*0 treated dropped here, 0 total dropped
+drop if Cellos==1
+
+capture drop os2
+capture drop nn*
+teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+tebalance summarize
+mat list r(table)
+duplicates report nn1 if nn1!=.&SFHA==1
+di r(unique_value)
+*1342/926
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==1&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+eststo BCME_LnD_normInc
+
+set more off
+use "$dta\data_analysis_neighborhoodtem.dta",clear
+set matsize 11000
+set emptycells drop
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+
+global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
+global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
+
+global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
+*High Inc neighbor
+set seed 1234567
+capture drop os1
+capture drop nn*
+capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
+replace os1=. if os1==0
+tab os1
+cap drop Cellos
+egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
+*0 treated dropped here, 0 total dropped
+drop if Cellos==1
+
+capture drop os2
+capture drop nn*
+teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+tebalance summarize
+mat list r(table)
+duplicates report nn1 if nn1!=.&SFHA==1
+di r(unique_value)
+*1016/571
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==1&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.fid_school) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+eststo BCME_LnH_HighInc
 
 
+set seed 1234567
+capture drop os1
+capture drop nn*
+capture teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2, tlevel(1) ematch($Match_cat)  atet nn(1) gen(nn) os(os1)
+replace os1=. if os1==0
+tab os1
+cap drop Cellos
+egen Cellos=mean(os1),by($Match_cat SalewithLoan neighbor_cat)
+*0 treated dropped here, 0 total dropped
+drop if Cellos==1
+
+set seed 123456789
+capture drop os2
+capture drop nn*
+teffects nnmatch (SalesPrice $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+tebalance summarize
+mat list r(table)
+duplicates report nn1 if nn1!=.&SFHA==1
+di r(unique_value)
+*190/105
+capture drop os2
+capture drop nn*
+teffects nnmatch (Ln_Price $Match_continue)(SFHA) if SalewithLoan==0&neighbor_cat==2&os1!=1, tlevel(1) ematch($Match_cat)  bias($View2 $X1 $FE i.fid_school i.period i.period#i.urban) atet vce(robust,nn(2)) nn(1) gen(nn) os(os2)
+eststo BCME_LnD_HighInc
+
+esttab BCME_LnH_lowInc BCME_LnH_normInc BCME_LnH_HighInc BCME_LnD_lowInc BCME_LnD_normInc BCME_LnD_HighInc using"$results\results_BCME_neighborInc.csv", keep(*.SFHA) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 
-
-
+*************************
 global View1 "Lisview_area total_viewangle Lisview_mnum Lisview_ndist"
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
 cap sum $View1 $View2
@@ -1062,10 +1048,9 @@ global FE "i.BuildingCondition i.HeatingType i.AirCondition i.SalesYear i.SalesM
 
 *Set graphic scheme
 set scheme sj,perm
-
-**********************
-* Summary Statistics *
-**********************
+***************************************************
+* Summary Statistics & By town by year statistics *
+***************************************************
 set more off
 use "$dta\data_4analysis.dta",clear
 
@@ -1081,6 +1066,9 @@ sum `v'
 duplicates report PropertyFullStreetAddress PropertyCity LegalTownship period
 
 global X "Waterfront_ocean Waterfront_river Waterfront_street  e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_Elevation sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Ag ratio_Dev ratio_Fore ratio_Open"
+
+duplicates report PropertyFullStreetAddress PropertyCity LegalTownship if weight!=.
+di r(unique_value)
 
 *Haven't processed structure elevation yet
 eststo House_all: estpost sum SalesPrice $FRisk rich_neighbor $View2 $X  
@@ -1114,31 +1102,6 @@ tab LegalTownship DataClassStndCode
 
 eststo SalesbyYear: estpost tab e_Year
 esttab SalesbyYear using"$results\SalesbyYear.csv", replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-
-//Preliminary Analysis
-set more off
-set matsize 11000
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
-egen PID=group(PropertyFullStreetAddress PropertyCity LegalTownship)
-duplicates report PID
-di r(unique_value)
-tab SFHA
-duplicates report PID if SFHA==1
-di r(unique_value)
-xtset PID period
-
-global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
-global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
-global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
-global FE "i.BuildingCondition i.HeatingType i.AirCondition i.SalesYear i.SalesMonth i.FIPS"
-
-*simple regression
-eststo OLS: reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period i.fid_school#i.period, cluster(ImportParcelID)
-eststo OLS_Ln: reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.fid_school#i.period, cluster(ImportParcelID)
-tab SFHA
-*9278/77559
-esttab OLS OLS_Ln using"$results\results_SFHA_OLS.csv", keep(SFHA $View2 e_LnSQFT e_LnSQFT_tot e_LnLSQFT $X) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-
 
 *Prices by coastal town
 clear all
@@ -1181,6 +1144,127 @@ eststo: estpost sum SalesPrice if LegalTownship=="`t'"&SalewithLoan==0
 eststo: estpost sum SalesPrice if SalewithLoan==0
 esttab using"$results\PriceNoLoan_bytown.csv", replace cells("mean(fmt(3))" "sd(fmt(3) par)")
 eststo clear
+
+
+set more off
+use "$dta\oneunitcoastsale_formatch.dta",clear
+drop if e_Year<1998
+*Average Price trend - by flood zone status
+tab e_Year if SFHA==1, sum(SalesPrice)
+tab e_Year if SFHA==0, sum(SalesPrice)
+
+*Average sales number by town by year by flood zone
+est clear
+set more off
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+local town = subinstr("`t'"," ","",.)
+foreach year of numlist 2000(1)2017 {
+eststo `town'_`year'_SFHA: capture estpost sum SalesPrice if LegalTownship=="`t'"&SFHA==1&e_Year==`year'
+}
+esttab `town'_* using"$results\Price_SFHA_`town'byyear.csv", replace mti cells("mean(fmt(3))" "sd(fmt(3) par)")
+est clear
+}
+
+est clear
+set more off
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+local town = subinstr("`t'"," ","",.)
+foreach year of numlist 2000(1)2017 {
+eststo `town'_`year'_SFHA: capture estpost sum SalesPrice if LegalTownship=="`t'"&SFHA==0&e_Year==`year'
+}
+esttab `town'_* using"$results\Price_noSFHA_`town'byyear.csv", replace mti cells("mean(fmt(3))" "sd(fmt(3) par)")
+est clear
+}
+
+*Processing the by town by year by flood zone price result tables, so that it's visualization is better
+*For SFHA
+set more off
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+local town = subinstr("`t'"," ","",.)
+import delimited D:\Work\CIRCA\Circa\CT_Property\results\Price_SFHA_`town'byyear.csv, varnames(1) clear
+drop v1 
+drop if _n==2
+drop if _n==3
+foreach n of numlist 2(1)19  {
+local v = "v"+"`n'"
+replace `v'=subinstr(`v',`"""',"",.)
+replace `v'=subinstr(`v',"=","",.)
+replace `v'=subinstr(`v',"`town'_","",.)
+replace `v'=subinstr(`v',"_SFHA","",.)
+destring `v',replace
+}
+xpose,clear
+gen Town="`town'"
+ren v1 Year
+ren v2 AveragePrice
+ren v3 Count
+order Town Year AveragePrice Count
+save "$results/Price_SFHA_`town'byyear.dta",replace
+}
+use $results/Price_SFHA_GREENWICHbyyear.dta,clear
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+local town = subinstr("`t'"," ","",.)
+append using $results/Price_SFHA_`town'byyear.dta
+erase $results/Price_SFHA_`town'byyear.dta
+erase $results/Price_SFHA_`town'byyear.csv
+}
+duplicates drop
+foreach l in 1 2 3 4 {
+replace AveragePrice=. if AveragePrice[_n]==AveragePrice[_n-`l']&Count[_n]==Count[_n-`l']
+replace Count=. if AveragePrice[_n]==.&Count[_n]==Count[_n-`l']
+}
+export excel using "D:\Work\CIRCA\Circa\CT_Property\results\Price_SFHA_bytownbyyear.xlsx", sheetreplace firstrow(variables) nolabel
+
+*For nonSFHA
+set more off
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+local town = subinstr("`t'"," ","",.)
+import delimited D:\Work\CIRCA\Circa\CT_Property\results\Price_noSFHA_`town'byyear.csv, varnames(1) clear
+drop v1 
+drop if _n==2
+drop if _n==3
+foreach n of numlist 2(1)19  {
+local v = "v"+"`n'"
+replace `v'=subinstr(`v',`"""',"",.)
+replace `v'=subinstr(`v',"=","",.)
+replace `v'=subinstr(`v',"`town'_","",.)
+replace `v'=subinstr(`v',"_SFHA","",.)
+destring `v',replace
+}
+xpose,clear
+gen Town="`town'"
+ren v1 Year
+ren v2 AveragePrice
+ren v3 Count
+order Town Year AveragePrice Count
+save "$results/Price_noSFHA_`town'byyear.dta",replace
+}
+use $results/Price_noSFHA_GREENWICHbyyear.dta,clear
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+local town = subinstr("`t'"," ","",.)
+append using $results/Price_noSFHA_`town'byyear.dta
+erase $results/Price_noSFHA_`town'byyear.dta
+erase $results/Price_noSFHA_`town'byyear.csv
+}
+duplicates drop
+foreach l in 1 2 3 4 {
+replace AveragePrice=. if AveragePrice[_n]==AveragePrice[_n-`l']&Count[_n]==Count[_n-`l']
+replace Count=. if AveragePrice[_n]==.&Count[_n]==Count[_n-`l']
+}
+export excel using "D:\Work\CIRCA\Circa\CT_Property\results\Price_noSFHA_bytownbyyear.xlsx", sheetreplace firstrow(variables) nolabel
+
+set more off
+use "$dta\oneunitcoastsale_formatch.dta",clear
+drop if e_Year<1998
+*Price distribution along the coast by town
+set more off
+foreach t in "GREENWICH" "STAMFORD" "DARIEN" "NORWALK" "WESTPORT" "FAIRFIELD" "BRIDGEPORT" "STRATFORD" "MILFORD" "WEST HAVEN" "NEW HAVEN" "EAST HAVEN" "BRANFORD" "GUILFORD" "MADISON" "CLINTON" "WESTBROOK" "OLD SAYBROOK" "OLD LYME" "EAST LYME" "WATERFORD" "NEW LONDON" "GROTON" "STONINGTON" {
+eststo: estpost sum SalesPrice if LegalTownship=="`t'"
+}
+eststo: estpost sum SalesPrice
+esttab using "$results/Summary_Alltownprice.csv",replace cells("mean(fmt(3))" "sd(fmt(3) par)")
+eststo clear
+
 *************************
 * Main Analysis-Hedonic *
 *************************
@@ -1276,171 +1360,175 @@ xtset PID period
 
 *With different sets of fixed effects and specification
 set more off
-eststo RA_ln_noperiod:   reg Ln_Price SFHA $View2 $X $FE i.fid_school [pweight=weight],cluster(PID)
-eststo RA_ln_withperiod: reg Ln_Price SFHA $View2 $X $FE i.fid_school i.period [pweight=weight],cluster(PID)
-eststo RA_ln_withall:    reg Ln_Price SFHA $View2 $X $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_ln_noperiod:   reghdfe Ln_Price SFHA $View2 $X $FE [pweight=weight_inv], a(i.fid_school) cluster(PID)
+eststo RA_ln_withperiod: reghdfe Ln_Price SFHA $View2 $X $FE [pweight=weight_inv], a(i.fid_school i.period) cluster(PID)
+eststo RA_ln_withall:    reghdfe Ln_Price SFHA $View2 $X $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 *Same-with lnSQFTs
 set more off
-eststo RA_ln_noperiodM:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school [pweight=weight],cluster(PID)
-eststo RA_ln_withperiodM:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight],cluster(PID)
-eststo RA_ln_withallM:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_ln_noperiodM:  reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school) cluster(PID)
+eststo RA_ln_withperiodM:reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period) cluster(PID)
+eststo RA_ln_withallM:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 set more off
-eststo RA_l_noperiod:   reg SalesPrice SFHA $View2 $X $FE i.fid_school [pweight=weight],cluster(PID)
-eststo RA_l_withperiod: reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period [pweight=weight],cluster(PID)
-eststo RA_l_withall:    reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_l_noperiod:   reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv], a(i.fid_school) cluster(PID)
+eststo RA_l_withperiod: reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv], a(i.fid_school i.period) cluster(PID)
+eststo RA_l_withall:    reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 set more off
-eststo RA_l_noperiodM:   reg SalesPrice SFHA $View2 $X1 $FE i.fid_school [pweight=weight],cluster(PID)
-eststo RA_l_withperiodM: reg SalesPrice SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight],cluster(PID)
-eststo RA_l_withallM:    reg SalesPrice SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_l_noperiodM:   reghdfe SalesPrice SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school) cluster(PID)
+eststo RA_l_withperiodM: reghdfe SalesPrice SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period) cluster(PID)
+eststo RA_l_withallM:    reghdfe SalesPrice SFHA $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 esttab RA_ln_noperiod RA_ln_withperiod RA_ln_withall RA_ln_noperiodM RA_ln_withperiodM RA_ln_withallM RA_l_noperiod RA_l_withperiod RA_l_withall RA_l_noperiodM RA_l_withperiodM RA_l_withallM using"$results\results_SFHA_RA1.csv", keep(SFHA $View2 e_LnSQFT e_LnSQFT_tot e_LnLSQFT $X) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 *RA1-Specification check_table4-0
 
-
-*preIrene - if period<71 postSandy - if period>76
-
 *Differentiate transactions with and without loans
 set more off
-eststo RA_ln_noperiod_H:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-eststo RA_ln_withperiod_H:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-eststo RA_ln_withall_H:   reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
+eststo RA_ln_noperiod_H:  reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school) cluster(PID)
+eststo RA_ln_withperiod_H:reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school i.period) cluster(PID)
+eststo RA_ln_withall_H:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 set more off
-eststo RA_ln_noperiod_D:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-eststo RA_ln_withperiod_D:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-eststo RA_ln_withall_D:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
+eststo RA_ln_noperiod_D:   reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school) cluster(PID)
+eststo RA_ln_withperiod_D: reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school i.period) cluster(PID)
+eststo RA_ln_withall_D:    reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 esttab RA_ln_noperiod_H RA_ln_withperiod_H RA_ln_withall_H RA_ln_noperiod_D RA_ln_withperiod_D RA_ln_withall_D using"$results\results_SFHA_RA2.csv", keep(SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 *Differentiate transactions with and without loans_linear price
 set more off
-eststo RA_l_noperiod_H:  reg SalesPrice SFHA $View2 $X $FE i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-eststo RA_l_withperiod_H:reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period [pweight=weight] if DataClassStndCode=="H",cluster(PID)
-eststo RA_l_withall_H:   reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
+eststo RA_l_noperiod_H:  reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school) cluster(PID)
+eststo RA_l_withperiod_H:reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school i.period) cluster(PID)
+eststo RA_l_withall_H:   reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 set more off
-eststo RA_l_noperiod_D:  reg SalesPrice SFHA $View2 $X $FE i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-eststo RA_l_withperiod_D:  reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period [pweight=weight] if DataClassStndCode=="D",cluster(PID)
-eststo RA_l_withall_D:  reg SalesPrice SFHA $View2 $X $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
+eststo RA_l_noperiod_D:   reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school) cluster(PID)
+eststo RA_l_withperiod_D: reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school i.period) cluster(PID)
+eststo RA_l_withall_D:    reghdfe SalesPrice SFHA $View2 $X $FE [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 esttab RA_l_noperiod_H RA_l_withperiod_H RA_l_withall_H RA_l_noperiod_D RA_l_withperiod_D RA_l_withall_D using"$results\results_SFHA_RA2_L.csv", keep(SFHA $View2 $X) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 *RA2-break up by with loan or not_table4-1
-tab SFHA SalewithLoan if weight!=.
-/*
-set more off
-eststo RA_ln_withall_DID_DH:  reg Ln_Price SFHA SalewithLoan 1.SalewithLoan#1.SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
-eststo RA_l_withall_DID_DH:  reg SalesPrice SFHA SalewithLoan 1.SalewithLoan#1.SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
-esttab RA_ln_withall_DID_DH RA_l_withall_DID_DH using"$results\results_SFHA_RA2_DID.csv", keep(SFHA SalewithLoan *.SalewithLoan#*.SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-*/
+tab SFHA SalewithLoan if weight!=.a
 
+*preIrene - if period<55 postSandy - if period>60
 *Differentiate transactions preIrene postSandy
 set more off
-eststo RA_ln_preIrene:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school  [pweight=weight] if period<71,cluster(PID)
-eststo RA_ln_postSandy:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if period>77,cluster(PID)
+eststo RA_ln_preIrene:  reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if period<55, a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
+eststo RA_ln_postSandy:reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if period>60, a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
-eststo RA_ln_preIreneH:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school  [pweight=weight] if period<71&DataClassStndCode=="H",cluster(PID)
-eststo RA_ln_postSandyH:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school  [pweight=weight] if period>77&DataClassStndCode=="H",cluster(PID)
+eststo RA_ln_preIreneH:  reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if period<55&DataClassStndCode=="H", a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
+eststo RA_ln_postSandyH:reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if period>60&DataClassStndCode=="H", a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
-eststo RA_ln_preIreneD:  reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school  [pweight=weight] if period<71&DataClassStndCode=="D",cluster(PID)
-eststo RA_ln_postSandyD:reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school  [pweight=weight] if period>77&DataClassStndCode=="D",cluster(PID)
+eststo RA_ln_preIreneD:  reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if period<55&DataClassStndCode=="D", a(i.fid_school i.period i.period#i.fid_school ) cluster(PID)
+eststo RA_ln_postSandyD:reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if period>60&DataClassStndCode=="D", a(i.fid_school i.period i.period#i.fid_school ) cluster(PID)
 
 esttab RA_ln_preIrene RA_ln_postSandy RA_ln_preIreneH RA_ln_postSandyH RA_ln_preIreneD RA_ln_postSandyD using"$results\results_SFHA_RA3.csv", keep(SFHA $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
+tab e_Year, gen(Years)
+foreach n of numlist 1(1)20 {
+gen Year_`n'_lnviewangle = Years`n'*lnviewangle
+}
+global View3 "lnviewarea Lisview_mnum Lisview_ndist"
+global X2 "i.e_Year#Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 
 *Year Trend of SFHA effect 
 set more off
-eststo RA_ln_trend: reg Ln_Price i.e_Year#SFHA $View2 $X1 $FE i.e_Year i.period i.fid_school i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_ln_trend: reghdfe Ln_Price i.e_Year#SFHA $View2 $X1 $FE i.e_Year  [pweight=weight_inv], a(i.period i.fid_school i.period#i.fid_school) cluster(PID)
 esttab RA_ln_trend using"$results\results_yeartrend.csv", keep(*.e_Year#1.SFHA) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+
+eststo RA_ln_trend1: reghdfe Ln_Price i.e_Year#SFHA Year_*_lnviewangle $View3 $X2 $FE i.e_Year [pweight=weight_inv], a(i.period i.fid_school i.period#i.fid_school) cluster(PID)
+esttab RA_ln_trend1 using"$results\results_yeartrend1.csv", keep(*.e_Year#1.SFHA Year_*_lnviewangle *.e_Year#1.Waterfront_ocean) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 coefplot RA_ln_trend, saving("$results\SFHA_yeartrend.gph",replace) ///
  vertical keep(1999.e_Year#1.SFHA 2000.e_Year#1.SFHA 2001.e_Year#1.SFHA 2002.e_Year#1.SFHA 2003.e_Year#1.SFHA 2004.e_Year#1.SFHA 2005.e_Year#1.SFHA /// 
  2006.e_Year#1.SFHA 2007.e_Year#1.SFHA 2008.e_Year#1.SFHA 2009.e_Year#1.SFHA 2010.e_Year#1.SFHA 2011.e_Year#1.SFHA 2012.e_Year#1.SFHA 2013.e_Year#1.SFHA ///
- 2014.e_Year#1.SFHA 2015.e_Year#1.SFHA 2016.e_Year#1.SFHA 2017.e_Year#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel() ytitle("Flood zone effect on housing price",) xlabel(2"2000" 7"Katrina" 10"Financial Crisis" 13"Irene" 14"Sandy&B-W Act" 16"Affordability" 18"2016",angle(45)) xline(7 10 13 14 16,lc(red)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+ 2014.e_Year#1.SFHA 2015.e_Year#1.SFHA 2016.e_Year#1.SFHA 2017.e_Year#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel() ytitle("Flood zone effect on housing price",) xlabel(2"2000" 7"Katrina" 10"Financial Crisis" 13"Irene" 14"Sandy&B-W Act" 16"Affordability" 18"2016",angle(45)) xline(7 10 13 14 16,lc(red)) yline(0,lc(black)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+ 
+coefplot RA_ln_trend1, saving("$results\Viewangle_yeartrend.gph",replace) ///
+ vertical keep(Year_3_lnviewangle Year_4_lnviewangle Year_5_lnviewangle  Year_6_lnviewangle Year_7_lnviewangle Year_8_lnviewangle /// 
+ Year_9_lnviewangle Year_10_lnviewangle Year_11_lnviewangle  Year_12_lnviewangle Year_13_lnviewangle Year_14_lnviewangle Year_15_lnviewangle  ///
+  Year_16_lnviewangle Year_17_lnviewangle Year_18_lnviewangle Year_19_lnviewangle Year_20_lnviewangle ///
+ ) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel() ytitle("Ocean View effect on housing price",) xlabel(1"2000" 6"Katrina" 9"Financial Crisis" 12"Irene" 13"Sandy&B-W Act" 15"Affordability" 17"2016",angle(45)) xline(6 9 12 13 15,lc(red)) yline(0,lc(black)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+
+coefplot RA_ln_trend1, saving("$results\Coastfront_yeartrend.gph",replace) ///
+ vertical keep(2000.e_Year#1.Waterfront_ocean 2001.e_Year#1.Waterfront_ocean 2002.e_Year#1.Waterfront_ocean 2003.e_Year#1.Waterfront_ocean 2004.e_Year#1.Waterfront_ocean 2005.e_Year#1.Waterfront_ocean /// 
+ 2006.e_Year#1.Waterfront_ocean 2007.e_Year#1.Waterfront_ocean 2008.e_Year#1.Waterfront_ocean 2009.e_Year#1.Waterfront_ocean 2010.e_Year#1.Waterfront_ocean 2011.e_Year#1.Waterfront_ocean 2012.e_Year#1.Waterfront_ocean ///
+ 2013.e_Year#1.Waterfront_ocean 2014.e_Year#1.Waterfront_ocean 2015.e_Year#1.Waterfront_ocean 2016.e_Year#1.Waterfront_ocean 2017.e_Year#1.Waterfront_ocean) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel() ytitle("Coastal front effect on housing price",) xlabel(1"2000" 6"Katrina" 9"Financial Crisis" 12"Irene" 13"Sandy&B-W Act" 15"Affordability" 17"2016",angle(45)) xline(6 9 12 13 15,lc(red)) yline(0,lc(black)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+
+*Do average SFHA effect change if we allow amenity effects to change over time? (No, and it doesn't really change the trend)
+set more off
+eststo RA_ln_amenitytrend: reghdfe Ln_Price SFHA Year_*_lnviewangle $View3 $X2 $FE i.e_Year [pweight=weight_inv], a(i.period i.fid_school i.period#i.fid_school) cluster(PID)
+esttab RA_ln_amenitytrend using"$results\results_SFHA_withamenitytrend.csv", keep(SFHA Year_*_lnviewangle *.e_Year#1.Waterfront_ocean) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 *Year Trend of SFHA effect for transactions with loan
 set more off
-eststo RA_ln_trend_wloan: reg Ln_Price i.e_Year#SFHA $View2 $X1 $FE i.e_Year i.period i.fid_school i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
+eststo RA_ln_trend_wloan: reghdfe Ln_Price i.e_Year#SFHA $View2 $X1 $FE i.e_Year [pweight=weight_inv] if DataClassStndCode=="H", a(i.period i.fid_school i.period#i.fid_school) cluster(PID)
 
 coefplot RA_ln_trend_wloan, saving("$results\SFHA_yeartrendwloan.gph",replace) ///
  vertical keep(1999.e_Year#1.SFHA 2000.e_Year#1.SFHA 2001.e_Year#1.SFHA 2002.e_Year#1.SFHA 2003.e_Year#1.SFHA 2004.e_Year#1.SFHA 2005.e_Year#1.SFHA /// 
  2006.e_Year#1.SFHA 2007.e_Year#1.SFHA 2008.e_Year#1.SFHA 2009.e_Year#1.SFHA 2010.e_Year#1.SFHA 2011.e_Year#1.SFHA 2012.e_Year#1.SFHA 2013.e_Year#1.SFHA ///
- 2014.e_Year#1.SFHA 2015.e_Year#1.SFHA 2016.e_Year#1.SFHA 2017.e_Year#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel() ytitle("Flood zone effect on housing price",) xlabel(2"2000" 7"Katrina" 10"Financial Crisis" 13"Irene" 14"Sandy&B-W Act" 16"Affordability" 18"2016",angle(45)) xline(7 10 13 14 16,lc(red)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+ 2014.e_Year#1.SFHA 2015.e_Year#1.SFHA 2016.e_Year#1.SFHA 2017.e_Year#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel() ytitle("Flood zone effect on housing price",) xlabel(2"2000" 7"Katrina" 10"Financial Crisis" 13"Irene" 14"Sandy&B-W Act" 16"Affordability" 18"2016",angle(45)) xline(7 10 13 14 16,lc(red)) yline(0,lc(black)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
 
 *Year Trend of SFHA effect for transactions without loan
 set more off
-eststo RA_ln_trend_woloan: reg Ln_Price i.e_Year#SFHA $View2 $X1 $FE i.e_Year i.period i.fid_school i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
+eststo RA_ln_trend_woloan: reghdfe Ln_Price i.e_Year#SFHA $View2 $X1 $FE i.e_Year [pweight=weight_inv] if DataClassStndCode=="D", a(i.period i.fid_school i.period#i.fid_school) cluster(PID)
 
 coefplot RA_ln_trend_woloan, saving("$results\SFHA_yeartrendwoloan.gph",replace) ///
  vertical keep(1999.e_Year#1.SFHA 2000.e_Year#1.SFHA 2001.e_Year#1.SFHA 2002.e_Year#1.SFHA 2003.e_Year#1.SFHA 2004.e_Year#1.SFHA 2005.e_Year#1.SFHA /// 
  2006.e_Year#1.SFHA 2007.e_Year#1.SFHA 2008.e_Year#1.SFHA 2009.e_Year#1.SFHA 2010.e_Year#1.SFHA 2011.e_Year#1.SFHA 2012.e_Year#1.SFHA 2013.e_Year#1.SFHA ///
- 2014.e_Year#1.SFHA 2015.e_Year#1.SFHA 2016.e_Year#1.SFHA 2017.e_Year#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel(-.6(.2).6) ytitle("Flood zone effect on housing price",) xlabel(2"2000" 7"Katrina" 10"Financial Crisis" 13"Irene" 14"Sandy&B-W Act" 16"Affordability" 18"2016",angle(45)) xline(7 10 13 14 16,lc(red)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+ 2014.e_Year#1.SFHA 2015.e_Year#1.SFHA 2016.e_Year#1.SFHA 2017.e_Year#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) ylabel(-.6(.2).6) ytitle("Flood zone effect on housing price",) xlabel(2"2000" 7"Katrina" 10"Financial Crisis" 13"Irene" 14"Sandy&B-W Act" 16"Affordability" 18"2016",angle(45)) xline(7 10 13 14 16,lc(red)) yline(0,lc(black)) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
 
 tab e_Year if DataClassStndCode=="D"&SFHA==1
-
 
 *Quantile regression with full example (heterogenous flood zone effect and viewshed effects on property value)
 set more off
 eststo drop RA_ln_all_Q*
-foreach q in .1 .25 .5 .75 .9{
+foreach q in .1 .2 .3 .4 .5 .6 .7 .8 .9{
 local num=100*`q'
-eststo RA_ln_all_Q`num',ti("Q(`q')"): qreg Ln_Price SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight],vce(robust) quantile(`q')
+eststo RA_ln_all_Q`num',ti("Q(`q')"): rifhdreg Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv], rif(q(`num')) att cluster(Tract) retain(rif_q`num') abs(sz_int_period period) replace iseed(1234567)
 }
-eststo RA_ln_all_Q_OLS: reg Ln_Price SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight],vce(robust)
 esttab RA_ln_all_Q* using"$results\results_qreg.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 set more off
 eststo drop RA_l_all_Q*
-foreach q in .1 .25 .5 .75 .9{
+foreach q in .1 .2 .3 .4 .5 .6 .7 .8 .9{
 local num=100*`q'
-eststo RA_l_all_Q`num',ti("Q(`q')"): qreg SalesPrice SFHA $View2 $X1 $FE i.fid_school  i.period [pweight=weight],vce(robust) quantile(`q')
+eststo RA_l_all_Q`num',ti("Q(`q')"): rifhdreg SalesPrice SFHA $View2 $X1 $FE [pweight=weight_inv], rif(q(`num')) att cluster(Tract) retain(rif_q`num') abs(sz_int_period period) replace iseed(1234567)
 }
-eststo RA_l_all_Q_OLS: reg SalesPrice SFHA $View2 $X1 $FE i.fid_school  i.period [pweight=weight],vce(robust)
-
 esttab RA_l_all_Q* using"$results\results_qreg_L.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-
 
 *With Loan - heterogeneity risk perception vs. relatively uniformly capitalization of insurance cost
 set more off
 eststo drop RA_l_all_Q*
-* 
-foreach q in .1 .25 .5 .75 .9{
+foreach q in .1 .2 .3 .4 .5 .6 .7 .8 .9{
 local num=100*`q'
-eststo RA_l_loan_Q`num',ti("Q(`q')"): qreg SalesPrice SFHA $View2 $X1 $FE i.fid_school  i.period [pweight=weight] if DataClassStndCode=="H", vce(robust) quantile(`q') wlsiter(2)
+eststo RA_l_loan_Q`num',ti("Q(`q')"): rifhdreg SalesPrice SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", rif(q(`num')) att cluster(Tract) retain(rif_q`num') abs(sz_int_period period) replace iseed(1234567)
 }
-eststo RA_l_loan_Q_OLS: reg SalesPrice SFHA $View2 $X1 $FE i.fid_school  i.period [pweight=weight] if DataClassStndCode=="H",vce(robust)
 esttab RA_l_loan_Q* using"$results\results_qreg_loanL.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 set more off
 eststo drop RA_ln_all_Q*
-foreach q in .1 .25 .5 .75 .9{
+foreach q in .1 .2 .3 .4 .5 .6 .7 .8 .9{
 local num=100*`q'
-eststo RA_ln_loan_Q`num',ti("Q(`q')"): qreg Ln_Price SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight] if DataClassStndCode=="H", vce(robust) quantile(`q') wlsiter(2)
+eststo RA_ln_loan_Q`num',ti("Q(`q')"): rifhdreg Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", rif(q(`num')) att cluster(Tract) retain(rif_q`num') abs(sz_int_period period) replace iseed(1234567)
 }
-eststo RA_ln_loan_Q_OLS: reg Ln_Price SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight] if DataClassStndCode=="H",vce(robust)
 esttab RA_ln_loan_Q* using"$results\results_qreg_loanln.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-
 
 *heterogeneity risk perception with no loan
 set more off
 eststo drop RA_l_all_Q*
-foreach q in .1 .25 .5 .75 .9{
+foreach q in .1 .2 .3 .4 .5 .6 .7 .8 .9{
 local num=100*`q'
-eststo RA_l_noloan_Q`num',ti("Q(`q')"): qreg SalesPrice SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight] if DataClassStndCode=="D", vce(robust) quantile(`q')
+eststo RA_l_noloan_Q`num',ti("Q(`q')"): rifhdreg SalesPrice SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D", rif(q(`num')) att cluster(Tract) retain(rif_q`num') abs(sz_int_period period) replace iseed(1234567)
 }
-eststo RA_l_noloan_Q_OLS: reg SalesPrice SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight] if DataClassStndCode=="D",vce(robust)
-esttab RA_l_noloan_Q_OLS using"$results\results_qreg_noloanLOLS.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 esttab RA_l_noloan_Q* using"$results\results_qreg_noloanL1.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 set more off
 eststo drop RA_ln_all_Q*
-foreach q in .1 .25 .5 .75 .9{
+foreach q in .1 .2 .3 .4 .5 .6 .7 .8 .9{
 local num=100*`q'
-eststo RA_ln_noloan_Q`num',ti("Q(`q')"): qreg Ln_Price SFHA $View2 $X1 $FE  i.fid_school  i.period  [pweight=weight] if DataClassStndCode=="D", vce(robust) quantile(`q')
+eststo RA_ln_noloan_Q`num',ti("Q(`q')"): rifhdreg Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="D", rif(q(`num')) att cluster(Tract) retain(rif_q`num') abs(sz_int_period period) replace iseed(1234567)
 }
-eststo RA_ln_noloan_Q_OLS: reg Ln_Price SFHA $View2 $X1 $FE  i.fid_school  i.period [pweight=weight] if DataClassStndCode=="D",vce(robust)
 esttab RA_ln_noloan_Q* using"$results\results_qreg_noloanln1.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-esttab RA_ln_noloan_Q_OLS using"$results\results_qreg_noloanlnOLS.csv", keep(SFHA lnviewangle Lisview_mnum) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 
 *What if we build in a insurance cost variable?
@@ -1456,7 +1544,6 @@ eststo RA_ln_quartertoone_Icost:   reg Ln_Price SFHA_Dfirm NFIPcost $X2_M $FE i.
 */
 
 sum SalesPrice [aweight=weight] if DataClassStndCode=="H"
-
 *Different Flood zones
 egen floodzone=group(fldzone)
 replace floodzone=0 if floodzone==.
@@ -1464,22 +1551,24 @@ replace floodzone=0 if floodzone==.
 gen A_zone=(fldzone=="A"|fldzone=="AE"|fldzone=="AO")
 gen V_zone=(fldzone=="VE")
 set more off
-eststo RA_ln_fldzones:  reg Ln_Price A_zone V_zone $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_ln_fldzones:  reghdfe Ln_Price A_zone V_zone $View2 $X1 $FE  [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 *Sandy surge
 set more off
-eststo RA_Sandysurge: reg Ln_Price i.Sandysurge_feet $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_Sandysurge: reghdfe Ln_Price i.Sandysurge_feet $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 *eststo OLS_Sandysurge:reg Ln_Price i.Sandysurge_feet $View2 $X1 $FE i.fid_school,cluster(ImportParcelID)
 set more off
-eststo RA_surgeandDfirm: reg Ln_Price SFHA i.Sandysurge_feet $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_surgeandDfirm: reghdfe Ln_Price SFHA i.Sandysurge_feet $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 *BFE
 set more off
-*eststo RA_ln_bfe:  reg Ln_Price i.static_bfe $X2 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(ImportParcelID)
+eststo RA_ln_bfe:     reghdfe Ln_Price i.BFE $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(ImportParcelID)
 
-esttab RA_Sandysurge RA_ln_fldzones using"$results\results_Otherfactors.csv", keep(*.Sandysurge_feet A_zone V_zone $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
-esttab RA_surgeandDfirm using"$results\results_SandySandDfirm.csv", keep(SFHA *.Sandysurge_feet $View2 $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+esttab RA_Sandysurge RA_ln_fldzones RA_ln_bfe using"$results\results_Otherfactors.csv", keep(*.Sandysurge_feet A_zone V_zone *.BFE $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+esttab RA_surgeandDfirm using"$results\results_SandySandDfirm.csv", keep(SFHA *.Sandysurge_feet $X1) replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
+
 coefplot RA_Sandysurge, saving("$results\Sandysurge_discount.gph",replace)  vertical keep(*.Sandysurge_feet) levels(90) recast(con) xlabel(,angle(45)) m(D) msize(small) mfcolor(white) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+
 
 ********************************************************************************
 *   investigate whether the upfront payments go beyond direct capitalization   *
@@ -1510,6 +1599,7 @@ xtset PID period
 
 hist LoanAmount if LoanAmount<=1000000
 hist LoanAmount if SFHA==1&LoanAmount<=1000000
+hist LoanAmount if SFHA==1&SalewithLoan==1&LoanAmount<=1000000
 sum LoanAmount
 
 *Calculate average upfront payment
@@ -1524,64 +1614,80 @@ scalar NPV_Inf_d7=annual_flow*(1/(1-1/1.07))
 di NPV_Inf_d7
 sum SalesPrice if SalewithLoan==1&SFHA==1
 
-
 *******************************************
-*  Re-matching with ematch on mile-buffer *
+*  pre-matching with ematch on mile-buffer *
 *******************************************
 *Investigate more on the conclusion of J&M2019
 *Detailed sorting-based-on-coastal-proxy 
+*Notice that Buffer_Coast is generated based on coastal proxy percentiles in "Preanalysis.do" 
+ /* details
+10th percentile-6.8212562 to 20th percentile-16.098896
+20th percentile-16.098896 to 30th percentile-29.049139
+30th percentile-29.049139 to 40th percentile-44.697788
+40th percentile-44.697788 to 50th percentile-62.806004
+50th percentile-62.806004 to 60th percentile-81.785568
+70th percentile-104.64304 to 80th percentile-134.47058
+80th percentile-134.47058 to 90th percentile-181.77643
+90th percentile-181.77643 to 100th percentile-.
+*/
 set more off
 use "$dta\oneunitcoastsale_formatch.dta",clear
 set seed 1234567
 set matsize 11000
 set emptycells drop
+
 drop if LegalTownship=="DARIEN"|LegalTownship=="GREENWICH"|LegalTownship=="STAMFORD"
-gen urban=1 if LegalTownship=="BRIDGEPORT"|LegalTownship=="EAST HAVEN"|LegalTownship=="New London"
+gen urban=1 if LegalTownship=="BRIDGEPORT"|LegalTownship=="NEW HAVEN"|LegalTownship=="New London"
 replace urban=0 if urban==.
-tab SalesPriceAmountStndCode
-*Now we have 116,221 prices, 107,703 are confirmed to be backed up by (closing) documents.
 
 *lnPrice
 gen Ln_Price=ln(SalesPrice)
-
 tab SalesYear
 tab SalesMonth
 
 sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth
+gen neg_transprice=-SalesPrice
+
+duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate, gen(dupsale)
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year RecordingDate neg_transprice *
+duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship RecordingDate,force
+/*restriction 6925 duplicate records dropped*/
+
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth,gen(duptrans)
 tab duptrans
-gen neg_transprice=-SalesPrice
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice
-drop if duptrans>=1 /*restriction 3,246 dup transactions within the same month drops, likely including house flippers*/
-capture drop duptrans neg_transprice
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year SalesMonth neg_transprice *
+drop if duptrans>=1 /*restriction 396 dup transactions within the same month drops, likely including house flippers*/
+capture drop duptrans dupsale neg_transprice
 
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship,gen(NoOfTrans)
-sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
+sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year *
 replace NoOfTrans=NoOfTrans+1
 tab SFHA,sum(SalesPrice)
 tab NoOfTrans
 
+tab SalesPriceAmountStndCode
+*Now we have 88,152 prices, 84,173 are confirmed to be backed up by (closing) documents.
+
+*Drop observations before 1998 (only three towns, GIS data maybe inaccurate for older sales)
+drop if e_Year<1998
 capture drop Quarter
 gen Quarter=1 if SalesMonth>=1&SalesMonth<4
 replace Quarter=2 if SalesMonth>=4&SalesMonth<7
 replace Quarter=3 if SalesMonth>=7&SalesMonth<10
 replace Quarter=4 if SalesMonth>=10&SalesMonth<=12
 capture drop period
-gen period=4*(e_Year-1994)+Quarter
+gen period=4*(e_Year-1998)+Quarter
 
-*drop possible house flipping events
+*drop possible house flipping events (within the same season)
 duplicates tag PropertyFullStreetAddress PropertyCity LegalTownship period,gen(duptrans)
 gen neg_transprice=-SalesPrice
 sort PropertyFullStreetAddress PropertyCity LegalTownship period neg_transprice TransId
 tab duptrans
-duplicates drop PropertyFullStreetAddress PropertyCity LegalTownship period duptrans,force
+drop if duptrans>=1 /*restriction 328 dup transactions within the same season drops, likely including house flippers*/
 capture drop duptrans neg_transprice
 
-gen rich_neighbor=(Block_MedInc>=150000)
-tab rich_neighbor
-
 *Creating categorical Match variables 
-*Use qualtiles and viewshed availability to devide bands
+*Use qualtiles and viewshed availability to devide bands - not used in analysis
 sum Dist_Coast if view_analysis==1,d
 gen Band1=(Dist_Coast<=r(p50)&view_analysis==1)
 gen Band2=(Dist_Coast>r(p50)&view_analysis==1)
@@ -1590,27 +1696,26 @@ gen Band=1 if Band1==1
 replace Band=2 if Band2==1
 replace Band=3 if Band3==1
 
+*Block median income
+drop if Block_MedInc==.
+gen rich_neighbor=(Block_MedInc>=150000)
+tab rich_neighbor
 gen SalewithLoan=(DataClassStndCode=="H")
-/*
-gen Era=1 if e_Year<2002 /*pre-911 moving out from NYC*/
-replace Era=2 if e_Year>=2002&e_Year<2008 /*pre-financial crisis*/
-replace Era=3 if e_Year>=2008&e_Year<2013 /*Irene&Sandy*/
-replace Era=4 if e_Year>=2013
-tab Era
-Matching on era is too coarse*/
+
 egen town=group(LegalTownship)
 drop if town==.
 drop if fid_school==.
-
+egen Tract=group(tractce)
+egen Block=group(tractce blkgrpce)
 *Check FIPS for each year
-foreach y of numlist 1994/2017 {
+foreach y of numlist 1998/2017 {
 di `y'
 tab FIPS if e_Year==`y'
 }
 *FIPS 9007 (Middlesex has no more than 7 obs annually before 2001)
 drop if FIPS==9007&e_Year<2001
 
-global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
+global Match_continue "lnviewarea lnviewangle e_Elev_dev Lisview_ndist Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber e_TotalRooms  e_TotalBedrooms e_NoOfStories"
 *Potential Categorical Match: e_Year SalewithLoan Band FIPS(county) fid_school town AirCondition e_Pool sewer_service BuildingCondition HeatingType
 global Match_cat "e_Year SalewithLoan Buffer_Coast rich_neighbor urban"
 *Exact match on quantile buffers
@@ -1632,7 +1737,7 @@ capture drop os2
 teffects nnmatch (SalesPrice $Match_continue)(SFHA) if os1!=1, tlevel(1) ematch($Match_cat) atet nn(1) gen(nn) vce(iid) os(os2)
 tebalance summarize
 duplicates report nn1 if nn1!=.
-di r(unique_value) /*6623*/
+di r(unique_value) /*6224*/
 
 *0 SFHA property (treated) have no exact match
 estat summarize 
@@ -1654,8 +1759,9 @@ merge 1:m ID using "$dta\data_analysis_tem1.dta"
 replace weight=1 if SFHA==1
 drop _merge
 tab weight
+*gen pweight
+gen weight_inv=210/weight
 save "$dta\data_4proxytrend.dta",replace
-
 
 set more off
 clear all
@@ -1664,15 +1770,7 @@ use "$dta\data_4proxytrend.dta",clear
 set matsize 11000
 set emptycells drop
 
-*Assign 0 bfe to those non SFHA areas
-sum BFE if SFHA==1&BFE!=-9999
-replace BFE=r(min) if BFE==-9999
-replace BFE=0 if BFE==.
-
-global View1 "Lisview_area total_viewangle Lisview_mnum Lisview_ndist"
 global View2 "lnviewarea lnviewangle Lisview_mnum Lisview_ndist"
-
-global X "Waterfront_ocean Waterfront_river Waterfront_street e_SQFT_liv e_SQFT_tot e_LotSizeSquareFeet e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 global X1 "Waterfront_ocean Waterfront_river Waterfront_street e_LnSQFT e_LnSQFT_tot e_LnLSQFT e_BuildingAge e_BuildingAge_sq e_Elev_dev e_Elev_devsq sewer_service e_NoOfBuildings e_NoOfStories e_TotalRooms e_TotalBedrooms e_TotalCalculatedBathCount AirCondition e_FireplaceNumber e_Pool e_GarageNoOfCars Dist_I95_NYC Lndist_coast Lndist_nearexit Lndist_highway Lndist_nrailroad Lndist_beach Lndist_brownfield Lndist_nwaterbody Lndist_develop Lndist_StatePark Lndist_airp Lndist_CBRS ratio_Dev ratio_Fore ratio_Open"
 global FE "i.BuildingCondition i.HeatingType i.SalesMonth"
 
@@ -1680,63 +1778,37 @@ sort PropertyFullStreetAddress PropertyCity LegalTownship e_Year
 egen PID=group(PropertyFullStreetAddress PropertyCity LegalTownship)
 xtset PID period
 
-tab Buffer_Coast, sum(SalesPrice)
-sum SalesPrice if Buffer_Coast==0&SFHA==1,d
-sum SalesPrice if Buffer_Coast==0,d
-sum SalesPrice if Buffer_Coast==4,d
-count if SalesPrice>500000&Buffer_Coast==0&SFHA==1
-
-sum Dist_Coast if view_analysis==1,d
-sum Dist_Coast if major_view==1,d
-
 set more off
-eststo RA_ln_proxytrend: reg Ln_Price i.Buffer_Coast#SFHA i.Buffer_Coast $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_ln_proxytrend: reghdfe Ln_Price i.Buffer_Coast#SFHA i.Buffer_Coast $View2 $X1 $FE [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
 esttab RA_ln_proxytrend using"$results\results_proxytrend.csv", keep(*.Buffer_Coast#1.SFHA) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 coefplot RA_ln_proxytrend, saving("$results\SFHA_proxytrend.gph",replace) ///
- vertical keep(*.Buffer_Coast#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) xlabel(1"Q0toQ10(0to686ft)" 2"Q10toQ20(686to1608ft)" 3"Q20toQ30(1608to2900ft)" 4"Q30toQ40(2900to4472ft)" 5"Q40toQ50(4472ftto1.19mi)" 6"Q50toQ60(1.19to1.55mi)" 7"Q60toQ70(1.55to1.98mi)" 8"Q70toQ80(1.98to2.55mi)" 9"Q80toQ90(2.55to3.44mi)" 10"Q90toQ100(above3.44mi)",angle(45)) ylabel() ytitle("Flood zone effect on housing price",) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
-*As it goes further from the coast, the analysis becomes less and less accurate, since the SFHA will be more related to rivers and we don't calculate river view. 
-*But, even with this understandable bias, we can still tell there's a sorting process-people caring little about the flood risk tend to live close to the coast.
-* 
+ vertical keep(*.Buffer_Coast#1.SFHA) levels(90) recast(con) m(D) msize(small) mfcolor(white) xlabel(1"Q0toQ10(0to682ft)" 2"Q10toQ20(682to1610ft)" 3"Q20toQ30(1610to2905ft)" 4"Q30toQ40(2905to4470ft)" 5"Q40toQ50(4470ftto1.19mi)" 6"Q50toQ60(1.19to1.55mi)" 7"Q60toQ70(1.55to1.98mi)" 8"Q70toQ80(1.98to2.55mi)" 9"Q80toQ90(2.55to3.44mi)" 10"Q90toQ100(above3.44mi)",angle(45)) ylabel() ytitle("Flood zone effect on housing price",) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+*As it goes further from the coast, the analysis becomes less accurate, since the SFHA will be more related to rivers and we are not full accurate about river view (may miss some upstream views). 
+graph export "$results\SFHA_proxytrend.tif",as(tif) replace
+
 set more off
-eststo RA_ln_proxytrendwloan: reg Ln_Price i.Buffer_Coast#SFHA i.Buffer_Coast $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="H",cluster(PID)
+eststo RA_ln_proxytrendwloan: reghdfe Ln_Price i.Buffer_Coast#SFHA i.Buffer_Coast $View2 $X1 $FE [pweight=weight_inv] if DataClassStndCode=="H", a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
 esttab RA_ln_proxytrendwloan using"$results\results_proxytrendwloan.csv", keep(*.Buffer_Coast#1.SFHA) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 coefplot RA_ln_proxytrendwloan, saving("$results\SFHA_proxytrendwloan.gph",replace) ///
- vertical keep(*.Buffer_Coast#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) xlabel(1"Q0toQ10(0to686ft)" 2"Q10toQ20(686to1608ft)" 3"Q20toQ30(1608to2900ft)" 4"Q30toQ40(2900to4472ft)" 5"Q40toQ50(4472ftto1.19mi)" 6"Q50toQ60(1.19to1.55mi)" 7"Q60toQ70(1.55to1.98mi)" 8"Q70toQ80(1.98to2.55mi)" 9"Q80toQ90(2.55to3.44mi)" 10"Q90toQ100(above3.44mi)",angle(45)) ylabel() ytitle("Flood zone effect on housing price",) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
-/*
-10th percentile-732.55164 to 20th percentile-1736.8153
+ vertical keep(*.Buffer_Coast#1.SFHA) levels(90) recast(con) m(D) msize(small) mfcolor(white) xlabel(1"Q0toQ10(0to682ft)" 2"Q10toQ20(682to1610ft)" 3"Q20toQ30(1610to2905ft)" 4"Q30toQ40(2905to4470ft)" 5"Q40toQ50(4470ftto1.19mi)" 6"Q50toQ60(1.19to1.55mi)" 7"Q60toQ70(1.55to1.98mi)" 8"Q70toQ80(1.98to2.55mi)" 9"Q80toQ90(2.55to3.44mi)" 10"Q90toQ100(above3.44mi)",angle(45)) ylabel() ytitle("Flood zone effect on housing price",) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+graph export "$results\SFHA_proxytrendwloan.tif",as(tif) replace
 
-20th percentile-1736.8153 to 30th percentile-3103.678
-
-30th percentile-3103.678 to 40th percentile-4679.2998
-
-40th percentile-4679.2998 to 50th percentile-6434.9932
-
-50th percentile-6434.9932 to 60th percentile-8293.918
-
-60th percentile-8293.918 to 70th percentile-10565.83
-
-70th percentile-10565.83 to 80th percentile-13536.546
-
-80th percentile-13536.546 to 90th percentile-18230.719
-
-90th percentile-18230.719 to 100th percentile-.
-*/
 set more off
-eststo RA_ln_proxytrendwoloan: reg Ln_Price i.Buffer_Coast#SFHA i.Buffer_Coast $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if DataClassStndCode=="D",cluster(PID)
+eststo RA_ln_proxytrendwoloan: reghdfe Ln_Price i.Buffer_Coast#SFHA i.Buffer_Coast $View2 $X1 $FE  [pweight=weight_inv] if DataClassStndCode=="D", a(i.fid_school i.period i.period#i.fid_school) cluster(Tract)
 esttab RA_ln_proxytrendwoloan using"$results\results_proxytrendwoloan.csv", keep(*.Buffer_Coast#1.SFHA) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
 coefplot RA_ln_proxytrendwoloan, saving("$results\SFHA_proxytrendwoloan.gph",replace) ///
- vertical keep(*.Buffer_Coast#1.SFHA) levels(95) recast(con) m(D) msize(small) mfcolor(white) xlabel(1"Q0toQ10(0to686ft)" 2"Q10toQ20(686to1608ft)" 3"Q20toQ30(1608to2900ft)" 4"Q30toQ40(2900to4472ft)" 5"Q40toQ50(4472ftto1.19mi)" 6"Q50toQ60(1.19to1.55mi)" 7"Q60toQ70(1.55to1.98mi)" 8"Q70toQ80(1.98to2.55mi)" 9"Q80toQ90(2.55to3.44mi)" 10"Q90toQ100(above3.44mi)",angle(45)) ylabel() ytitle("Flood zone effect on housing price",) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
-
+ vertical keep(*.Buffer_Coast#1.SFHA) levels(90) recast(con) m(D) msize(small) mfcolor(white) xlabel(1"Q0toQ10(0to682ft)" 2"Q10toQ20(682to1610ft)" 3"Q20toQ30(1610to2905ft)" 4"Q30toQ40(2905to4470ft)" 5"Q40toQ50(4470ftto1.19mi)" 6"Q50toQ60(1.19to1.55mi)" 7"Q60toQ70(1.55to1.98mi)" 8"Q70toQ80(1.98to2.55mi)" 9"Q80toQ90(2.55to3.44mi)" 10"Q90toQ100(above3.44mi)",angle(45)) ylabel() ytitle("Flood zone effect on housing price",) base ciopts(recast(rconnected) msize(tiny) lwidth(vvthin))
+graph export "$results\SFHA_proxytrendwoloan.tif",as(tif) replace
 
 *Check whether the previous results are replicable here - Yes
 set more off
-eststo RA_ln_MBuffer_B12: reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if view_analysis==1,cluster(PID)
-eststo RA_ln_MBuffer_B12H: reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if view_analysis==1&SalewithLoan==1,cluster(PID)
-eststo RA_ln_MBuffer_B3: reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight] if view_analysis==0,cluster(PID)
-eststo RA_ln_MBuffer: reg Ln_Price SFHA $View2 $X1 $FE i.fid_school i.period i.period#i.fid_school [pweight=weight],cluster(PID)
+eststo RA_ln_MBuffer_B12: reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if view_analysis==1, a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
+eststo RA_ln_MBuffer_B12H: reghdfe Ln_Price SFHA $View2 $X1 $FE [pweight=weight_inv] if view_analysis==1&SalewithLoan==1,a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
+eststo RA_ln_MBuffer_B3: reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv] if view_analysis==0, a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
+eststo RA_ln_MBuffer: reghdfe Ln_Price SFHA $View2 $X1 $FE  [pweight=weight_inv], a(i.fid_school i.period i.period#i.fid_school) cluster(PID)
 
 esttab RA_ln_MBuffer_B12 RA_ln_MBuffer_B12H RA_ln_MBuffer_B3 RA_ln_MBuffer using"$results\results_MBuffer_B12.csv", keep(SFHA $View2 $X1) mti("") replace b(a3) se r2(3) star(+ .1 * .05 ** .01 *** .001) stats (N N_g r2, fmt(0 3))
 
