@@ -11,9 +11,6 @@ global Zitrax "$zroot\dta"
 
 global gis ""
 
-
-
-
 ***************************************************************************
 *   Merge with GIS variables, Update Lat&Long from Google Geocoding API   *
 ***************************************************************************
@@ -36,33 +33,49 @@ capture drop _merge
 merge 1:1 FID using"$dta0\NearAirport.dta"
 drop if _merge==1
 drop _merge
+replace Dist_Airport=Dist_Airport/100
 merge 1:1 FID using"$dta0\NearHDdevelop.dta"
 drop _merge
+replace Dist_HDdevelop=Dist_HDdevelop/100
 merge 1:1 FID using"$dta0\NearCBRS.dta"
 drop _merge
+replace Dist_CBRS=Dist_CBRS/100
 merge 1:1 FID using"$dta0\NearStatePark.dta"
 drop _merge
+replace Dist_StatePark=Dist_StatePark/5280
 merge 1:1 FID using"$dta0\property_nearexit.dta"
 drop _merge
+replace Dist_exit_near1=Dist_exit_near1/5280
+replace Dist_exit_near2=Dist_exit_near2/5280
+replace Dist_exit_near3=Dist_exit_near3/5280
 merge 1:1 FID using"$dta0\property_nearpubbeach.dta"
 drop _merge
+replace Dist_beach_near1=Dist_beach_near1/5280
+replace Dist_beach_near2=Dist_beach_near2/5280
+replace Dist_beach_near3=Dist_beach_near3/5280
 merge 1:1 FID using"$dta0\property_nearfreeway.dta"
 drop _merge
+replace Dist_freeway=Dist_freeway/100
 merge 1:1 FID using"$dta0\property_nearbrownfield.dta"
 drop _merge
+replace Dist_Brownfield=Dist_Brownfield/100
 merge 1:1 FID using"$dta0\property_nearshore.dta"
 drop if _merge==1
 drop _merge
+replace Dist_Coast=Dist_Coast/100
 merge 1:1 FID using"$dta0\property_nearwaterbody.dta"
 drop if _merge==1
 drop _merge
+replace Dist_NWaterbody=Dist_NWaterbody/100
 merge 1:1 FID using"$dta0\property_nearrailroad.dta"
 drop if _merge==1
 drop _merge
+replace Dist_NRailroad=Dist_NRailroad/100
 merge 1:1 FID using"$dta0\property_disti95nyc.dta"
 drop _merge
 merge 1:1 FID using"$dta0\property_nearI95.dta"
 drop _merge
+replace Dist_I95=Dist_I95/100
 save "$dta0\Distances.dta",replace
 
 *Aggregate other geographic variables
@@ -243,7 +256,6 @@ drop _merge
 save "$dta0\GeoAttributes.dta",replace
 
 
-
 *Merge
 use "$dta0\data_oneunitcoastsale.dta",clear
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID LegalTownship using"$dta0\Distances.dta"
@@ -252,7 +264,7 @@ drop _merge
 merge m:1 PropertyFullStreetAddress PropertyCity using"$dta0\Distances.dta",update
 drop if _merge==2|_merge==1
 drop _merge
-*1237 still not merged,dropped
+*1366 still not merged,dropped
 
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID LegalTownship using"$dta0\GeoAttributes.dta"
 drop if _merge==2
@@ -290,11 +302,14 @@ drop if _merge==2
 
 drop orig_fid
 foreach v in ratio_Dev ratio_Fore ratio_Open ratio_Ag {
+replace `v'=0 if `v'==.&_merge!=1
 sum `v'
 replace `v'=r(mean) if `v'==.&_merge==1
-replace `v'=0 if `v'==.
 ren `v' `v'02
 }
+*Revise ratio_Open so that 88-nonag/undefined and not 81-nodata are categorized into open, and the ratios add up to one.
+*This revision is very minor in quantity
+replace ratio_Open02=1-ratio_Ag02-ratio_Fore02-ratio_Dev02 
 drop _merge
 *Landcover 2011
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\lcratio_2011.dta"
@@ -306,6 +321,7 @@ replace `v'=r(mean) if `v'==.&_merge==1
 replace `v'=0 if `v'==.
 ren `v' `v'11
 }
+replace ratio_Open11=1-ratio_Ag11-ratio_Fore11-ratio_Dev11
 drop _merge
 *Landcover 2015
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\lcratio_2015.dta"
@@ -317,13 +333,14 @@ replace `v'=r(mean) if `v'==.&_merge==1
 replace `v'=0 if `v'==.
 ren `v' `v'15
 }
+replace ratio_Open15=1-ratio_Ag15-ratio_Fore15-ratio_Dev15
 drop _merge
 
 *Purge obs with inaccurate coordinates
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\Ggl_points_toberevised.dta"
 drop if _merge==2
 gen Wrong_point_VA=(_merge==3)
-*2319 wrong address points
+*2532 wrong address points
 drop diff_street diff_address PropertyStreet PropertyStreetNum
 drop _merge
 gen PropertyStreetNum=substr(PropertyFullStreetAddress,1,ustrpos(PropertyFullStreetAddress," ",2))
@@ -333,7 +350,7 @@ sort address_num
 gen address_num1=substr(PropertyStreetNum,1,1)
 destring address_num1,replace force
 drop if address_num1==.
-/*restriction missing address number 3 dropped*/
+/*restriction missing address number 4 dropped*/
 drop PropertyStreetNum address_num address_num1
 
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\viewshedprop_buildingcoor.dta"
@@ -343,16 +360,17 @@ drop _merge
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID using"$dta0\pointcheck_NONVA.dta"
 drop if _merge==2
 drop _merge
-*6241 wrong points in NONVA zone according to NONVA revision
+*6831 wrong points in NONVA zone according to NONVA revision
 gen Wrong_point_NONVA=1 if diff_address==1
 tab Wrong_point_NONVA
 
-count if Wrong_point_VA==1&buildingAM_rev!=1 /*(742)*/
-drop if Wrong_point_VA==1&buildingAM_rev!=1&Wrong_point_NONVA==1
-/*restriction drop 602 points that identified as wrong according to VA revision and not picked up by the NONVA revision*/
+*Rerun
+count if Wrong_point_VA==1&buildingAM_rev!=1 /*(798) wrong and not revised in VA revision, but some are picked up by NONVA revision*/
+drop if Wrong_point_VA==1&buildingAM_rev!=1&Wrong_point_NONVA!=1
+/*restriction drop 151 points that identified as wrong according to VA revision and not picked up by the NONVA revision*/
 drop if Wrong_point_NONVA==1
-/*restriction drop 5639 wrong points according to NONVA revision */
-*Wrongly mapped points that dropped in total 6241
+/*restriction drop 6,831 wrong points according to NONVA revision */
+*Wrongly mapped points that dropped in total 6982
 
 tab buildingAM_rev
 
@@ -375,8 +393,7 @@ foreach v in Lisview_area Lisview_mnum Lisview_ndist total_viewangle major_view 
 replace `v'=`v'rev if buildingAM_rev==1
 drop `v'rev
 }
-*about 300-500 viewshed revised due to the coordinate revision (out of 31,942 that viewshed has been analyzed)
-
+*about 100-600 viewshed revised due to the coordinate revision (out of 31,942 that viewshed has been analyzed)
 *drop non-VA properties that do not fall in any parcel polygons
 /*
 merge m:1 PropertyFullStreetAddress PropertyCity ImportParcelID  using"$dta\proponeunit_nonVA.dta", keepusing(PropertyFullStreetAddress PropertyCity ImportParcelID)
@@ -390,7 +407,7 @@ drop if _merge==2
 drop _merge
 ren MedianIncome Block_MedInc
 merge m:1 PropertyFullStreetAddress LegalTownship using"$dta0\LOMA_formerge.dta"
-*760 transactions are merged with LOMAs, 1150 LOMAs are not merged
+*819 transactions are merged with LOMAs, 1144 LOMAs are not merged
 drop if _merge==2
 drop _merge
 ren IssueDate LOMADate
@@ -404,22 +421,23 @@ save "$dta0\oneunitcoastsale_Geo.dta",replace
 *   End merge with GIS variables   *
 ************************************
 
-
 ************************************
 *       Begin clean  variables     *
 ************************************
-use "$dta\oneunitcoastsale_Geo.dta",clear
+use "$dta0\oneunitcoastsale_Geo.dta",clear
 tab PropertyCountyLandUseDescription
-drop if NoOfBuilding==0 /*restriction 8 obs dropped*/
+drop if NoOfBuilding==0 /*restriction 9 obs dropped*/
 tab SFHA_2012, sum(SalesPrice)
 tab SFHA_2017, sum(SalesPrice)
+*tab SFHA_2012 SFHA_2017 if LegalTownship=="BRANFORD"
+tab PropertyFullStreetAddress if SFHA_2012==0&SFHA_2017==1&LegalTownship=="BRANFORD"
 
 *Building age
 count if e_YearBuilt==.
-drop if e_YearBuilt==. /*restriction 291 dropped*/
+drop if e_YearBuilt==. /*restriction 261 dropped*/
 gen e_BuildingAge=e_Year-e_YearBuilt
 sum e_BuildingAge
-drop if e_BuildingAge<0 /*restriction 40 dropped*/
+drop if e_BuildingAge<0 /*restriction 55 dropped, since imputed some tax records for missing years*/
 gen e_BuildingAge_sq=e_BuildingAge*e_BuildingAge
 
 *Building area
@@ -430,21 +448,21 @@ count if LotSizeSquareFeet==.|LotSizeSquareFeet==0
 count if e_LandAssessedValue==.|e_LandAssessedValue==0
 count if LotSizeSquareFeet==.&e_LandAssessedValue==.
 drop if LotSizeSquareFeet==.&e_LandAssessedValue==.
-/*restriction 76 likely misclassified condons dropped*/
+/*restriction 28 likely misclassified condons dropped*/
 
 count if SQFTBAG==.&SQFTBAL==.&SQFTBASE==.
 count if e_SQFTBAG==.&e_SQFTBAL==.&e_SQFTBASE==.
 count if LotSizeSquareFeet==.
 count if e_LotSizeSquareFeet==.
-drop if e_SQFTBAG==.&e_SQFTBAL==.&e_SQFTBASE==. /*restriction missing sqft 475 dropped*/
-drop if e_LotSizeSquareFeet==./*restriction missing lotsize 19 dropped*/
+drop if e_SQFTBAG==.&e_SQFTBAL==.&e_SQFTBASE==. /*restriction missing sqft 480 dropped*/
+drop if e_LotSizeSquareFeet==./*restriction missing lotsize 10 dropped*/
 
 gen e_SQFT_liv=e_SQFTBAL
 gen e_SQFT_tot=e_SQFTBAG if e_SQFTBASE==.
 replace e_SQFT_tot=e_SQFTBAG+e_SQFTBASE if e_SQFTBASE!=.
 replace e_SQFT_tot=e_SQFT_liv if e_SQFT_tot==.
 sum e_SQFT_liv e_SQFT_tot
-drop if e_SQFT_liv==. /*restriction 12 missing SQFT*/
+drop if e_SQFT_liv==. /*restriction 13 missing SQFT*/
 gen e_LnSQFT=ln(e_SQFT_liv)
 gen e_LnSQFT_tot=ln(e_SQFT_tot)
 gen e_LnLSQFT=ln(e_LotSizeSquareFeet+1)
@@ -457,7 +475,7 @@ replace e_NoOfStories=round(SQFTBAG/SQFTBAL) if e_NoOfStories==.
 count if e_NoOfStories==.
 replace e_NoOfStories=1 if e_NoOfStories==.
 tab LegalTownship,sum(e_NoOfStories)
-*imputed 2980 e_NoOfStories=1
+*imputed 2456 e_NoOfStories=1
 
 sum e_GarageNoOfCars
 tab LegalTownship,sum(e_GarageNoOfCars)
@@ -483,7 +501,7 @@ replace e_TotalRooms=r(mean) if e_TotalRooms==.
 sum e_TotalCalculatedBathCount
 replace e_TotalCalculatedBathCount=r(mean) if e_TotalCalculatedBathCount==.
 sum e_NoOfBuildings
-drop if e_NoOfBuildings==. /*restriction 25 missing noofbuildings*/
+drop if e_NoOfBuildings==. /*restriction 28 missing noofbuildings*/
 
 foreach v in e_BuildingConditionStndCode e_RoofStructureTypeStndCode e_HeatingTypeorSystemStndCode e_AirConditioningStndCode e_FoundationTypeStndCode e_PoolStndCode e_GarageStndCode {
 replace `v'=trim(`v')
@@ -495,6 +513,21 @@ tab BuildingCondition
 tab e_BuildingConditionStndCode
 
 /*
+
+group(e_Bui |
+ldingCondit |
+ionStndCode |
+          ) |      Freq.     Percent        Cum.
+------------+-----------------------------------
+          0 |        702        0.56        0.56
+          1 |     80,549       63.68       64.24
+          2 |      9,134        7.22       71.46
+          3 |      1,655        1.31       72.77
+          4 |     34,196       27.04       99.80
+          5 |        248        0.20      100.00
+          6 |          2        0.00      100.00
+------------+-----------------------------------
+      Total |    114,800      100.00
 
 */
 
@@ -545,23 +578,25 @@ di `n' "0th percentile-" r(r`n') " to " `l' "0th percentile-" r(r`l')
 }
 tab Buffer_Coast,sum(Dist_Coast)
 /*
-10th percentile-732.55164 to 20th percentile-1736.8153
+(11,479 real changes made)
+10th percentile-670.2374 to 20th percentile-1586.0723
+(11,479 real changes made)
+20th percentile-1586.0723 to 30th percentile-2869.1653
+(11,481 real changes made)
+30th percentile-2869.1653 to 40th percentile-4434.6768
+(11,481 real changes made)
+40th percentile-4434.6768 to 50th percentile-6252.5413
+(11,480 real changes made)
+50th percentile-6252.5413 to 60th percentile-8131.6147
+(11,480 real changes made)
+60th percentile-8131.6147 to 70th percentile-10432.383
+(11,478 real changes made)
+70th percentile-10432.383 to 80th percentile-13425.837
+(11,482 real changes made)
+80th percentile-13425.837 to 90th percentile-18155.912
+(11,480 real changes made)
+90th percentile-18155.912 to 100th percentile-.
 
-20th percentile-1736.8153 to 30th percentile-3103.678
-
-30th percentile-3103.678 to 40th percentile-4679.2998
-
-40th percentile-4679.2998 to 50th percentile-6434.9932
-
-50th percentile-6434.9932 to 60th percentile-8293.918
-
-60th percentile-8293.918 to 70th percentile-10565.83
-
-70th percentile-10565.83 to 80th percentile-13536.546
-
-80th percentile-13536.546 to 90th percentile-18230.719
-
-90th percentile-18230.719 to 100th percentile-.
 */
 
 egen town_Elevation=mean(e_Elevation), by(LegalTownship Buffer_Coast)
@@ -648,9 +683,10 @@ count if SalesDate>=LOMADate
 count if SalesDate>=LOMADate&SFHA==1
 replace SFHA=0 if SFHA==1&SalesDate>=LOMADate&LOMAStatus!="LOMCs Superseded"
 replace SFHA=0 if SFHA==1&(SalesDate>=LOMADate&SalesDate<=LOMAStatusDate)&LOMAStatus=="LOMCs Superseded"
-*180 changed SFHA status
+*223 changed SFHA status
 
 drop if BuildingConditionStndCode=="PR"|BuildingConditionStndCode=="UD"
+*55 dropped - with poor building condition
 
 *calculate pre-FIRM/post-FIRM
 replace e_EffectiveYearBuilt=e_YearBuilt if e_EffectiveYearBuilt==.
@@ -707,9 +743,10 @@ global Geo "Waterfront_* e_Elev_dev e_Elev_devsq Lndist_brownfield Lndist_highwa
 sum $Geo
 
 global Match_continue "lnviewarea lnviewangle e_Elev_dev Dist_I95_NYC Lndist_brownfield Lndist_highway Lndist_nrailroad Lndist_beach Lndist_nearexit Lndist_StatePark Lndist_CBRS Lndist_develop Lndist_airp Lndist_nwaterbody Lndist_coast ratio_Ag ratio_Open ratio_Fore ratio_Dev e_SQFT_liv e_LotSizeSquareFeet e_BuildingAge e_NoOfBuildings e_TotalCalculatedBathCount e_GarageNoOfCars e_FireplaceNumber  e_TotalBedrooms e_NoOfStories"
-save "$dta\oneunitcoastsale_formatch.dta",replace
+save "$dta0\oneunitcoastsale_formatch.dta",replace
 
-hist Dist_Coast if Dist_Coast<=60000, xtitle(Distance to the Coastline) xline(3168,lc(red))
+hist Dist_Coast if Dist_Coast<=600, xtitle(Distance to the Coastline) xline(3168,lc(red))
 *******************************
 *     End clean variables     *
 *******************************
+
