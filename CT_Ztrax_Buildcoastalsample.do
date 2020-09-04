@@ -105,6 +105,31 @@ foreach v of varlist $code {
 gen e_Year = TaxYear
 replace ImportParcelID=ha_ImportParcelID if ImportParcelID==.
 sort ImportParcelID TaxYear
+
+*Drop duplicated records otherwise causing trouble - duplicated records for the same Tax Year
+*Firstly mark
+duplicates report ImportParcelID TaxYear
+duplicates tag ImportParcelID TaxYear,gen(dup1)
+global var "GarageNoOfCars Pool FireplaceNumber TotalBedrooms TotalRooms NoOfStories EffectiveYearBuilt YearBuilt BuildingOrImprovementNumber PropertyCountyLandUseCode NoOfUnits AssessmentYear TotalAssessedValue ImprovementAssessedValue LandAssessedValue "
+gen missing_AssYear=(AssessmentYear==.)
+egen R_dup1_Ass=rank(missing_AssYear),by(ImportParcelID TaxYear dup1)
+gen missing_num=0
+foreach v in $var {
+replace missing_num=missing_num+1 if e_`v'==.
+}
+sort ImportParcelID TaxYear
+egen R_dup1=rank(missing_num),by(ImportParcelID TaxYear dup1)
+sort ImportParcelID TaxYear R_dup1
+*impute values from the duplicated obs with less missings to the one with more missings
+foreach v in $var {
+replace e_`v'=e_`v'[_n+1] if e_`v'==.&dup1==1&dup1[_n+1]==1
+}
+sort ImportParcelID TaxYear R_dup1_Ass R_dup1
+*duplicates drop those observations with missing AssYear or more missing values
+duplicates drop ImportParcelID TaxYear,force
+/*restriction 290,274 dropped*/
+drop dup1 missing_AssYear R_dup1_Ass missing_num R_dup1
+
 * mark missing year from the bottom
 gen markForAdd = 1 if ImportParcelID==ImportParcelID[_n+1] & e_Year < e_Year[_n+1]-1  
 mvencode markForAdd, mv(0) override
@@ -123,14 +148,14 @@ capture drop RN1 Rank1
 foreach yr of numlist 2017/1995{
 foreach v of varlist $vars{
 	display " working on `v' for `yr' now"
-	replace e_`v' = e_`v'[_n-1] if ImportParcelID==ImportParcelID[_n-1] & e_`v'==. & TaxYear ==`yr'
+	replace e_`v' = e_`v'[_n-1] if ImportParcelID==ImportParcelID[_n-1] & e_`v'==. & e_Year ==`yr'
 	
 }
 
 ** do the same with the Codes
 foreach v of varlist $code {
 	display " working on `v' for `yr' now"
-	replace e_`v' = e_`v'[_n-1] if ImportParcelID==ImportParcelID[_n-1] & e_`v'=="" & TaxYear ==`yr'
+	replace e_`v' = e_`v'[_n-1] if ImportParcelID==ImportParcelID[_n-1] & e_`v'=="" & e_Year ==`yr'
 	
 }	
 }
@@ -138,14 +163,14 @@ foreach v of varlist $code {
 foreach yr of numlist 2016/1994{
 	foreach v of varlist $vars{
 		display " working on `v' for `yr' now"
-		replace e_`v' = e_`v'[_n+1] if ImportParcelID==ImportParcelID[_n+1] & e_`v'==. & TaxYear ==`yr'
+		replace e_`v' = e_`v'[_n+1] if ImportParcelID==ImportParcelID[_n+1] & e_`v'==. & e_Year ==`yr'
 
 	}
 
 	** do the same with the Codes
 	foreach v of varlist $code {
 		display " working on `v' for `yr' now"
-		replace e_`v' = e_`v'[_n+1] if ImportParcelID==ImportParcelID[_n+1] & e_`v'=="" & TaxYear ==`yr'
+		replace e_`v' = e_`v'[_n+1] if ImportParcelID==ImportParcelID[_n+1] & e_`v'=="" & e_Year ==`yr'
 
 	}
 	
@@ -160,3 +185,4 @@ save "$dta0\Allassess_oneunitcoastal.dta",replace
 *********************************************************************************************************
 * End Limit Sample to coastal(towns) single-fam residences & Merge with standard attributes from ZTRAX  *
 *********************************************************************************************************
+
